@@ -99,10 +99,10 @@ def _mha_forward_kernel(
     # read, compute, and write all in 2d chunks. 1 element ~= 1 CUDA thread index.
     # q tile has shape [block_q, block_d], block_d == head_dim.
     curr_q_slice = pl.dslice(start_q * block_q, block_q)
-    q = pl.load(q_ref, (curr_q_slice, pl.dslice(None)))
-
-    # This is to make exp2 work.
+    q = pl.load(q_ref, (curr_q_slice, pl.dslice(None)), eviction_policy="evict_last")
     qk_scale = softmax_scale * 1.44269504
+    # This is to make exp2 work.
+    q = q * qk_scale
     # TODO: fix the segment mask for the case where seq length is not the whole
     # context.
 
@@ -118,9 +118,7 @@ def _mha_forward_kernel(
         
         # qk = jnp.zeros([block_q, block_k], dtype=jnp.float32)
         # qk += pl.dot(q, k.T)  # [block_q, block_k].
-        if softmax_scale != 1.0:
-            q *= softmax_scale
-        q *= qk_scale
+
         qk = jnp.zeros([block_q, block_k], dtype=jnp.float32)
         # TODO: fix the segment mask for the case where seg length is not seq_len.
         if causal:

@@ -106,10 +106,11 @@ dataflow = [
     "orjson==3.9.10",
 ]
 
-[triton] = [
-    "jax[cuda12_pip]==0.4.25",
+triton = [
+    "jax==0.4.25",
     "matplotlib",
     "triton==2.1.0",
+    "pytest",
 ]
 
 [tool.flit.module]
