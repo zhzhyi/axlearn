@@ -22,20 +22,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-try:
-    import jax_triton as jt  # pytype: disable=import-error  # pylint: disable=import-error
-
-    from axlearn.common.flash_attention.gpu_attention import flash_attention
-    from axlearn.common.flash_attention.utils import mha_reference
-
-    if jt.get_compute_capability(0) < 80:
-        pytest.skip(reason="Incompatible hardware.", allow_module_level=True)
-except ModuleNotFoundError as e:
-    # Some libraries can only be installed on GPU, so we'll skip on CI.
-    pytest.skip(
-        reason=f"Skipping flash_attention tests due to missing deps: {e}",
-        allow_module_level=True,
-    )
+from axlearn.common.flash_attention.gpu_attention import flash_attention
+from axlearn.common.flash_attention.utils import mha_reference
 
 
 @pytest.mark.parametrize(
@@ -143,7 +131,7 @@ def test_bwd_against_ref(
     else:
         bias = None
 
-    assert str(q.device()) == "gpu:0"
+    assert str(q.device()) == "cuda:0"
     sm_scale = q.shape[-1] ** -0.5
 
     # Compare outputs.

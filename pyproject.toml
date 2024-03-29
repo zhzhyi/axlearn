@@ -14,10 +14,10 @@ requires-python = ">=3.9"
 dependencies = [
     "attrs>=23.1.0", # We use `type` in `attrs.field`
     "absl-py",
-    "chex<0.1.81",  # chex 0.1.81 depends on numpy>=1.25.0.
+    "chex==0.1.86", #"chex<0.1.81",  # chex 0.1.81 depends on numpy>=1.25.0.
     "importlab==0.7",  # breaks pytype on 0.8
-    "jax==0.4.21",
-    "jaxlib==0.4.21",
+    "jax==0.4.25",#"jax==0.4.21",
+    "jaxlib==0.4.25", #"jaxlib==0.4.21", 
     "nltk==3.7",  # for text preprocessing
     "numpy<1.24",  # needed to pin to < 1.24; tf ragged_tensor depends on deprecated np.object.
     "optax==0.1.7",  # optimizers (0.1.0 has known bugs).
@@ -52,7 +52,7 @@ dev = [
     "einops",
     "evaluate",
     "fairseq==0.12.2",  # test-only; note Apple Silicon start.md instructions parse this specifier '==', please be careful when upgrading.
-    "flax==0.7.4",  # for param converter and adapter
+    "flax==0.8.2",  # "flax==0.7.4",  # for param converter and adapter
     "isort",  # formatting
     "pre-commit",  # local pre commit hooks
     "pycocotools",  # COCO evaluation tools
