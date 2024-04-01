@@ -352,7 +352,7 @@ def _mha_forward_helper(
             bias_block_spec,  # bias
         ]
 
-    out, l, m = pl.pallas_call(
+    return pl.pallas_call(
         kernel,
         grid=grid_,
         in_specs=in_specs,
@@ -364,7 +364,6 @@ def _mha_forward_helper(
         interpret=interpret,
         name="mha_forward",
     )(query, key, value, bias)
-    return out, l, m
 
 
 def _mha_forward(
