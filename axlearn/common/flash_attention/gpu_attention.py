@@ -92,7 +92,7 @@ def _mha_forward_kernel(
     assert bias_type == "none"
     # acc is the buffer where we accumulate the output on sram.
     # m_i and l_i (see FlashAttention paper) are updated during the k,v loop.
-    m_i = jnp.zeros(block_q, dtype=jnp.float32) + DEFAULT_MASK_VALUE
+    m_i = jnp.zeros(block_q, dtype=jnp.float32) - float('inf')
     l_i = jnp.zeros(block_q, dtype=jnp.float32)
     # acc is the buffer where we accumulate the output on sram.
     acc = jnp.zeros((block_q, block_d), dtype=jnp.float32)
@@ -101,7 +101,7 @@ def _mha_forward_kernel(
     # read, compute, and write all in 2d chunks. 1 element ~= 1 CUDA thread index.
     # q tile has shape [block_q, block_d], block_d == head_dim.
     curr_q_slice = pl.dslice(start_q * block_q, block_q)
-    q = pl.load(q_ref, (curr_q_slice, pl.dslice(None)), eviction_policy="evict_last")
+    q = pl.load(q_ref, (curr_q_slice, pl.dslice(None)))
     qk_scale = softmax_scale * 1.44269504
     # This is to make exp2 work.
     q = q * qk_scale
