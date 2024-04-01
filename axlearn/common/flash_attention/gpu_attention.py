@@ -210,7 +210,7 @@ def flash_attention(
         The attention outputs of shape [batch_size, target_length, num_heads, per_head_dim].
     """
     del backward_pass_impl
-    return _mha_forward(
+    return _mha_forward_helper(
         query,
         key,
         value,
@@ -279,7 +279,7 @@ def flash_attention(
     # )(query, key, value, bias)
 
 
-def _mha_forward(
+def _mha_forward_helper(
     query: Tensor,
     key: Tensor,
     value: Tensor,
@@ -354,6 +354,41 @@ def _mha_forward(
         interpret=interpret,
         name="mha_forward",
     )(query, key, value, bias)
+    return out, l, m
+
+
+def _mha_forward(
+    query: Tensor,
+    key: Tensor,
+    value: Tensor,
+    bias: Optional[Tensor],
+    softmax_scale: float,
+    causal: bool,
+    block_q: int,
+    block_k: int,
+    backward_pass_impl: str,
+    num_warps: Optional[int],
+    num_stages: int,
+    grid: Any,
+    interpret: bool,
+    debug: bool,
+):
+    out, l, m = _mha_forward_helper(
+        query,
+        key,
+        value,
+        bias,
+        softmax_scale,
+        causal,
+        block_q,
+        block_k,
+        backward_pass_impl,
+        num_warps,
+        num_stages,
+        grid,
+        interpret,
+        debug,
+    )
     return out, (query, key, value, bias, out, l, m)
 
 

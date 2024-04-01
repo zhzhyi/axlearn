@@ -210,7 +210,7 @@ def bench_flash_attention_backward(
 
             @jax.jit
             def ref_fn(q, k, v, bias):
-                return mha_reference(q, k, v, bias, casual=True).sum()
+                return mha_reference(q, k, v, bias, causal=True).sum()
 
             ref_bwd = jax.grad(ref_fn, argnums=(0, 1, 2))
             fn = lambda: ref_bwd(q, k, v, bias)
