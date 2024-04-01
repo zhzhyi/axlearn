@@ -428,7 +428,6 @@ def _mha_backward_kernel(
     dv_ref,
     *,
     softmax_scale: float,
-    qk_scale: float,
     bias_type: str,
     causal: bool,
     block_q: int,
@@ -463,7 +462,8 @@ def _mha_backward_kernel(
     """
     del out_ref, l_ref  # Not needed
     seq_len = q_ref.shape[0]
-    pid = pl.program_id(0)
+    # pid = pl.program_id(0)
+    assert bias_type == "none"
 
     def outer_loop(start_k, _):
         dv = jnp.zeros([block_k, block_d], dtype=jnp.float32)
@@ -477,20 +477,15 @@ def _mha_backward_kernel(
             dv, dk = carry
             curr_q_slice = pl.ds(start_q * block_q, block_q)
             q = pl.load(q_ref, (curr_q_slice, slice(None)))
-            # l = pl.load(l_ref,  (curr_q_slice,))
-
-            do = pl.load(do_scaled_ref, (curr_q_slice, slice(None)))
-            di = pl.load(delta_ref, (curr_q_slice,))
-
             qk = pl.dot(q, k.T)
 
             # These casts are needed to avoid precision issues.
-            # qk = qk.astype(q_ref.dtype)
+            qk = qk.astype(q_ref.dtype)
             qk = qk.astype(jnp.float32)
 
             if softmax_scale != 1.0:
                 qk *= softmax_scale
-            qk *= qk_scale
+            # qk *= qk_scale
 
             if causal:
                 span_q = start_q * block_q + jnp.arange(block_q)
@@ -498,13 +493,15 @@ def _mha_backward_kernel(
                 qk = jnp.where(causal_mask, qk, DEFAULT_MASK_VALUE)
 
             m = pl.load(m_ref, (curr_q_slice,))
-            p = jnp.exp2(qk - m[:, None])
+            p = jnp.exp(qk - m[:, None]) #jnp.exp2(qk - m[:, None])
+            do = pl.load(do_scaled_ref, (curr_q_slice, slice(None)))
             dv = dv + pl.dot(p.astype(do.dtype).T, do)
+            di = pl.load(delta_ref, (curr_q_slice,))
             dp = jnp.zeros((block_q, block_k), dtype=jnp.float32) - di[:, None]
             dp = dp + pl.dot(do, v.T)
             ds = p * dp
             if softmax_scale != 1.0:
-                ds *= softmax_scale
+                ds = ds * softmax_scale
             dk = dk + pl.dot(ds.astype(q_ref.dtype).T, q)
             dq = pl.load(dq_ref, (curr_q_slice, slice(None)),
                 eviction_policy="evict_last",
@@ -550,20 +547,18 @@ def _mha_backward(
     del num_warps, num_stages, grid
     q, k, v, b, out, l, m = res
 
-    batch_size, seq_len, num_heads, head_dim = q.shape
-    # Backward heuristics, using the same block size for block q and block k.
-    block_q = min(block_q, seq_len)
-    block_k = min(block_q, seq_len)
-    
-    # Very tiny amount of time, not worth using pallas_call.
-    do_scaled, delta = _preprocess_backward(out, do, l, block_q, debug, interpret)
-
     # NOTE: temporarily removed the "xla" branch, which seems unused.
     if backward_pass_impl == "triton":
+        batch_size, seq_len, num_heads, head_dim = q.shape
+        # Backward heuristics, using the same block size for block q and block k.
+        block_q = min(block_q, seq_len)
+        block_k = min(block_k, seq_len)
+        # Very tiny amount of time, not worth using pallas_call.
+        do_scaled, delta = _preprocess_backward(out, do, l, block_q, debug, interpret)
         # We accumulate into dq so we need to initialize it to zeros.
         dq = jnp.zeros(q.shape, jnp.float32)
         out_shapes = [
-            jax.ShapeDtypeStruct(q.shape, dq.dtype),
+            jax.ShapeDtypeStruct(dq.shape, dq.dtype),
             jax.ShapeDtypeStruct(k.shape, k.dtype),
             jax.ShapeDtypeStruct(v.shape, v.dtype),
         ]
@@ -588,12 +583,10 @@ def _mha_backward(
         # TODO(markblee): num_warps=8 seems to work from basic testing, confirm the below comment.
         # TODO(sharadmv): figure out why num_warps=8 doesn't work!
         num_warps = 8
-        qk_scale = softmax_scale * 1.44269504
         dq, dk, dv = pl.pallas_call(
             functools.partial(
                 _mha_backward_kernel,
                 softmax_scale=softmax_scale,
-                qk_scale=qk_scale,
                 bias_type=bias_type,
                 causal=causal,
                 block_q=block_q,
@@ -618,6 +611,5 @@ def _mha_backward(
     else:
         raise ValueError(f"Invalid backward pass implementation: {backward_pass_impl}")
     return dq.astype(q.dtype), dk, dv, None
-
 
 flash_attention.defvjp(_mha_forward, _mha_backward)
