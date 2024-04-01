@@ -225,6 +225,7 @@ def flash_attention(
         grid,
         interpret,
         debug,
+        residual_refs=False,
     )
     # batch_size, seq_len, num_heads, head_dim = query.shape
     # block_q = min(block_q, seq_len)
@@ -294,6 +295,7 @@ def _mha_forward_helper(
     grid: Any,
     interpret: bool,
     debug: bool,
+    residual_refs: bool = True,
 ):
     """Calls `_mha_forward_kernel`."""
     del backward_pass_impl
@@ -328,25 +330,33 @@ def _mha_forward_helper(
         block_k=block_k,
         block_d=head_dim,
     )
-    out_shape = [
-        jax.ShapeDtypeStruct(shape=query.shape, dtype=query.dtype),  # out
-        jax.ShapeDtypeStruct(shape=(batch_size, num_heads, seq_len), dtype=jnp.float32),  # l
-        jax.ShapeDtypeStruct(shape=(batch_size, num_heads, seq_len), dtype=jnp.float32),  # m
-    ]
-    out, l, m = pl.pallas_call(
-        kernel,
-        grid=grid_,
-        in_specs=[
+    if residual_refs:
+        out_shape = [
+            jax.ShapeDtypeStruct(shape=query.shape, dtype=query.dtype),  # out
+            jax.ShapeDtypeStruct(shape=(batch_size, num_heads, seq_len), dtype=jnp.float32),  # l
+            jax.ShapeDtypeStruct(shape=(batch_size, num_heads, seq_len), dtype=jnp.float32),  # m
+        ]
+        out_specs = [
+            pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),
+            pl.BlockSpec(lambda _, j, k: (j, k, 0), (None, None, seq_len)),
+            pl.BlockSpec(lambda _, j, k: (j, k, 0), (None, None, seq_len)),
+        ]
+    else:
+        out_shape = jax.ShapeDtypeStruct(shape=query.shape, dtype=query.dtype), # out
+        out_specs = pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim))
+
+    in_specs = [
             pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # query
             pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # key
             pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # value
             bias_block_spec,  # bias
-        ],
-        out_specs=[
-            pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),
-            pl.BlockSpec(lambda _, j, k: (j, k, 0), (None, None, seq_len)),
-            pl.BlockSpec(lambda _, j, k: (j, k, 0), (None, None, seq_len)),
-        ],
+        ]
+
+    out, l, m = pl.pallas_call(
+        kernel,
+        grid=grid_,
+        in_specs=in_specs,
+        out_specs=out_specs,
         num_warps=num_warps_,
         num_stages=num_stages_,
         out_shape=out_shape,
@@ -388,6 +398,7 @@ def _mha_forward(
         grid,
         interpret,
         debug,
+        residual_refs=True,
     )
     return out, (query, key, value, bias, out, l, m)
 
