@@ -88,6 +88,8 @@ def _mha_forward_kernel(
     seq_len = q_ref.shape[0]
     start_q = pl.program_id(0)
 
+    # Bias is not supported.
+    assert bias_type == "none"
     # acc is the buffer where we accumulate the output on sram.
     # m_i and l_i (see FlashAttention paper) are updated during the k,v loop.
     m_i = jnp.zeros(block_q, dtype=jnp.float32) + DEFAULT_MASK_VALUE
@@ -115,28 +117,18 @@ def _mha_forward_kernel(
         curr_k_slice = pl.dslice(start_k * block_k, block_k)
         # This is slow loop over kv, essentially a scan through.
         k = pl.load(k_ref, (curr_k_slice, pl.dslice(None)))
-        
-        # qk = jnp.zeros([block_q, block_k], dtype=jnp.float32)
-        # qk += pl.dot(q, k.T)  # [block_q, block_k].
 
-        qk = jnp.zeros([block_q, block_k], dtype=jnp.float32)
+        qk = pl.dot(q, k.T)  # [block_q, block_k].
+
         # TODO: fix the segment mask for the case where seg length is not seq_len.
         if causal:
             span_q = start_q * block_q + jnp.arange(block_q)
             span_k = start_k * block_k + jnp.arange(block_k)
-            qk = jnp.where(span_q[:, None] >= span_k[None, :], qk, DEFAULT_MASK_VALUE)
-        qk += pl.dot(q, k.T)  # [block_q, block_k].
-        # TODO(markblee): Support 'vector'.
-        if bias_type == "matrix":
-            b = pl.load(
-                b_ref,
-                (curr_q_slice, curr_k_slice),
-            )
-            qk += b
+            causal_mask = span_q[:, None] >= span_k[None, :]
+            qk = jnp.where(causal_mask, qk, DEFAULT_MASK_VALUE)
 
         # Bring closer to XLA:GPU numerics.
         # These casts are needed to avoid precision issues.
-        # qk = qk.astype(q_ref.dtype)
         qk = qk.astype(jnp.float32)
         m_curr = qk.max(axis=-1)
         m_next = jnp.maximum(m_curr, m_prev)
@@ -151,7 +143,8 @@ def _mha_forward_kernel(
         # p = p.astype(jnp.float16)
 
         v = pl.load(v_ref, (curr_k_slice, pl.dslice(block_d)))
-        acc = acc + pl.dot(p.astype(v.dtype), v)
+        acc_curr = pl.dot(p.astype(v.dtype), v)
+        acc = acc + acc_curr
         return acc, m_next, l_next
 
     if causal:
@@ -217,56 +210,73 @@ def flash_attention(
         The attention outputs of shape [batch_size, target_length, num_heads, per_head_dim].
     """
     del backward_pass_impl
-    batch_size, seq_len, num_heads, head_dim = query.shape
-    block_q = min(block_q, seq_len)
-    block_k = min(block_k, seq_len)
-    # Heuristics.
-    grid_ = grid
-    if grid_ is None:
-        grid_ = (pl.cdiv(seq_len, block_q), batch_size, num_heads)
-
-    # Bias.
-    bias_type = "none"
-    bias_block_spec = None
-    if bias is not None:
-        bias_type = "matrix"  # Assume bias is always a matrix for now.
-        bias_block_spec = pl.BlockSpec(lambda _, j, k: (j, k, 0, 0), (None, None, seq_len, seq_len))
-
-    num_warps_ = num_warps
-    if num_warps_ is None:
-        num_warps_ = 4 if head_dim <= 64 else 8
-    num_stages_ = num_stages
-    if num_stages_ is None:
-        num_stages_ = 4
-    kernel = functools.partial(
-        _mha_forward_kernel,
-        softmax_scale=softmax_scale,
-        bias_type=bias_type,
-        causal=causal,
-        block_q=block_q,
-        block_k=block_k,
-        block_d=head_dim,
+    return _mha_forward(
+        query,
+        key,
+        value,
+        bias,
+        softmax_scale,
+        causal,
+        block_q,
+        block_k,
+        "triton",
+        num_warps,
+        num_stages,
+        grid,
+        interpret,
+        debug,
     )
-    out_shape = jax.ShapeDtypeStruct(shape=query.shape, dtype=query.dtype)
+    # batch_size, seq_len, num_heads, head_dim = query.shape
+    # block_q = min(block_q, seq_len)
+    # block_k = min(block_k, seq_len)
+    # # Heuristics.
+    # grid_ = grid
+    # if grid_ is None:
+    #     grid_ = (pl.cdiv(seq_len, block_q), batch_size, num_heads)
+
+    # # Bias.
+    # assert bias is None
+    # bias_type = "none"
+    # bias_block_spec = None
+    # # if bias is not None:
+    # #     bias_type = "matrix"  # Assume bias is always a matrix for now.
+    # #     bias_block_spec = pl.BlockSpec(lambda _, j, k: (j, k, 0, 0), (None, None, seq_len, seq_len))
+
+    # num_warps_ = num_warps
+    # if num_warps_ is None:
+    #     num_warps_ = 4 if head_dim <= 64 else 8
+    # num_stages_ = num_stages
+    # if num_stages_ is None:
+    #     num_stages_ = 4
+    # kernel = functools.partial(
+    #     _mha_forward_kernel,
+    #     softmax_scale=softmax_scale,
+    #     bias_type=bias_type,
+    #     causal=causal,
+    #     block_q=block_q,
+    #     block_k=block_k,
+    #     block_d=head_dim,
+    # )
+    # out_shape = jax.ShapeDtypeStruct(shape=query.shape, dtype=query.dtype)
     
-    in_specs = [
-            pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # query
-            pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # key
-            pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # value
-            bias_block_spec,  # bias
-        ]
-    return pl.pallas_call(
-        kernel,
-        grid=grid_,
-        in_specs=in_specs,
-        out_specs=pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),
-        num_warps=num_warps_,
-        num_stages=num_stages_,
-        out_shape=out_shape,
-        debug=debug,
-        interpret=interpret,
-        name="mha_forward",
-    )(query, key, value, bias)
+    # in_specs = [
+    #         pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # query
+    #         pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # key
+    #         pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # value
+    #         bias_block_spec,  # bias
+    #     ]
+    # return pl.pallas_call(
+    #     kernel,
+    #     grid=grid_,
+    #     in_specs=in_specs,
+    #     out_specs=pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),
+    #     num_warps=num_warps_,
+    #     num_stages=num_stages_,
+    #     out_shape=out_shape,
+    #     debug=debug,
+    #     interpret=interpret,
+    #     name="mha_forward",
+    # )(query, key, value, bias)
 
 
 def _mha_forward(
@@ -296,11 +306,12 @@ def _mha_forward(
         grid_ = (pl.cdiv(seq_len, block_q), batch_size, num_heads)
 
     # Bias.
+    assert bias is None
     bias_type = "none"
     bias_block_spec = None
-    if bias is not None:
-        bias_type = "matrix"  # Assume bias is always a matrix for now.
-        bias_block_spec = pl.BlockSpec(lambda _, j, k: (j, k, 0, 0), (None, None, seq_len, seq_len))
+    # if bias is not None:
+    #     bias_type = "matrix"  # Assume bias is always a matrix for now.
+    #     bias_block_spec = pl.BlockSpec(lambda _, j, k: (j, k, 0, 0), (None, None, seq_len, seq_len))
 
     num_warps_ = num_warps
     if num_warps_ is None:
@@ -401,7 +412,7 @@ def _preprocess_backward(
             pl.BlockSpec(lambda _, j, k: (j, k, 0), (None, None, seq_len)),
         ],
         num_warps=8,
-        num_stages=4,
+        num_stages=3,
         out_shape=out_shape,
         debug=debug,
         interpret=interpret,
@@ -471,16 +482,14 @@ def _mha_backward_kernel(
         curr_k_slice = pl.ds(start_k * block_k, block_k)
         k = pl.load(k_ref, (curr_k_slice, slice(None)))
         v = pl.load(v_ref, (curr_k_slice, slice(None)))
+        span_k = start_k * block_k + jnp.arange(block_k)
 
         def inner_loop(start_q, carry):
             dv, dk = carry
             curr_q_slice = pl.ds(start_q * block_q, block_q)
             q = pl.load(q_ref, (curr_q_slice, slice(None)))
-            m = pl.load(m_ref, (curr_q_slice,))
             # l = pl.load(l_ref,  (curr_q_slice,))
-            dq = pl.load(dq_ref, (curr_q_slice, slice(None)),
-                eviction_policy="evict_last",
-            )
+
             do = pl.load(do_scaled_ref, (curr_q_slice, slice(None)))
             di = pl.load(delta_ref, (curr_q_slice,))
 
@@ -494,25 +503,23 @@ def _mha_backward_kernel(
                 qk *= softmax_scale
             qk *= qk_scale
 
-            if bias_type == "matrix":
-                # Load bias in transposed order, for hopefully better cache efficiency.
-                b = pl.load(b_ref, (curr_k_slice, curr_q_slice))
-                b = b.astype(jnp.float32)
-                qk += b.T  # Transpose back.
-
             if causal:
                 span_q = start_q * block_q + jnp.arange(block_q)
-                span_k = start_k * block_k + jnp.arange(block_k)
-                qk = jnp.where(span_q[:, None] >= span_k[None, :], qk, DEFAULT_MASK_VALUE)
+                causal_mask = span_q[:, None] >= span_k[None, :]
+                qk = jnp.where(causal_mask, qk, DEFAULT_MASK_VALUE)
 
+            m = pl.load(m_ref, (curr_q_slice,))
             p = jnp.exp2(qk - m[:, None])
             dv = dv + pl.dot(p.astype(do.dtype).T, do)
             dp = jnp.zeros((block_q, block_k), dtype=jnp.float32) - di[:, None]
             dp = dp + pl.dot(do, v.T)
             ds = p * dp
             if softmax_scale != 1.0:
-                ds = ds * softmax_scale
+                ds *= softmax_scale
             dk = dk + pl.dot(ds.astype(q_ref.dtype).T, q)
+            dq = pl.load(dq_ref, (curr_q_slice, slice(None)),
+                eviction_policy="evict_last",
+            )
             dq = dq + pl.dot(ds.astype(k.dtype), k).astype(dq.dtype)
             pl.store(
                 dq_ref,
@@ -526,7 +533,10 @@ def _mha_backward_kernel(
             lower_bound = lax.div(start_k * block_k, block_q)
         else:
             lower_bound = 0
-        dv, dk = lax.fori_loop(lower_bound, pl.cdiv(seq_len, block_q), inner_loop, (dv, dk))
+        dv, dk = lax.fori_loop(lower_bound,
+                               pl.cdiv(seq_len, block_q),
+                               inner_loop,
+                               (dv, dk))
         pl.store(dv_ref, (curr_k_slice, slice(None)), dv.astype(dv_ref.dtype))
         pl.store(dk_ref, (curr_k_slice, slice(None)), dk.astype(dk_ref.dtype))
 
@@ -573,15 +583,6 @@ def _mha_backward(
         bias_type = "none"
         bias_block_spec = None
         input_output_aliases = {8: 0}
-        if b is not None:
-            # Transpose seq dims for cache efficiency.
-            b = jnp.moveaxis(b, -1, -2)
-            bias_type = "matrix"
-            bias_block_spec = pl.BlockSpec(
-                lambda j, k: (j, k, 0, 0), (None, None, seq_len, seq_len)
-            )
-            # We have one more non-None input (i.e., in_specs has another tree_leaf).
-            input_output_aliases = {9: 0}
         in_specs = [
                 pl.BlockSpec(lambda j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # query
                 pl.BlockSpec(lambda j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # key

@@ -41,7 +41,7 @@ from axlearn.common.flash_attention.utils import mha_reference
 @pytest.mark.parametrize("use_fwd", [True, False])
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("sm_scale", [1.0, 0.123])
-@pytest.mark.parametrize("bias_type", ["none", "matrix"])
+@pytest.mark.parametrize("bias_type", ["none",])
 def test_fwd_against_ref(
     batch_size: int,
     seq_len: int,
@@ -64,7 +64,6 @@ def test_fwd_against_ref(
         bias = None
 
     if use_fwd:
-
         @jax.jit
         def impl(q, k, v, bias):
             fn = functools.partial(
@@ -102,7 +101,7 @@ def test_fwd_against_ref(
         (2, 8, 384, 64),
     ],
 )
-@pytest.mark.parametrize("bias_type", ["none", "matrix"])
+@pytest.mark.parametrize("bias_type", ["none",])
 @pytest.mark.parametrize("block_size", [128, 64])
 @pytest.mark.parametrize("causal", [True, False])
 def test_bwd_against_ref(

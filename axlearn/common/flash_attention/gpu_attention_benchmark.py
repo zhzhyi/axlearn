@@ -155,11 +155,11 @@ def bench_flash_attention(
         #)
 
         if "triton" in library:
-            fn = lambda: flash_attention(q, k, v, bias)
+            fn = lambda: flash_attention(q, k, v, bias, causal=True)
         elif "pallas" in library:
-            fn = lambda: pallas_mha(q, k, v, segment_ids=None)
+            fn = lambda: pallas_mha(q, k, v, segment_ids=None, causal=True)
         else:
-            fn = lambda: mha_reference(q, k, v, bias)
+            fn = lambda: mha_reference(q, k, v, bias, causal=True)
         ms = triton.testing.do_bench(fn, warmup=warmup, rep=rep)
         
         
@@ -194,7 +194,7 @@ def bench_flash_attention_backward(
 
             @jax.jit
             def test_fn(q, k, v, bias):
-                return flash_attention(q, k, v, bias).sum()
+                return flash_attention(q, k, v, bias, causal=True).sum()
 
             test_bwd = jax.grad(test_fn, argnums=(0, 1, 2))
             fn = lambda: test_bwd(q, k, v, bias)
@@ -202,7 +202,7 @@ def bench_flash_attention_backward(
             @jax.jit
             # No bias is supported yet.
             def pallas_fn(q, k, v):
-                return pallas_mha(q, k, v, segment_ids=None).sum()
+                return pallas_mha(q, k, v, segment_ids=None, causal=True).sum()
 
             pallas_bwd = jax.grad(pallas_fn, argnums=(0, 1, 2))
             fn = lambda: pallas_bwd(q, k, v)
@@ -210,7 +210,7 @@ def bench_flash_attention_backward(
 
             @jax.jit
             def ref_fn(q, k, v, bias):
-                return mha_reference(q, k, v, bias).sum()
+                return mha_reference(q, k, v, bias, casual=True).sum()
 
             ref_bwd = jax.grad(ref_fn, argnums=(0, 1, 2))
             fn = lambda: ref_bwd(q, k, v, bias)

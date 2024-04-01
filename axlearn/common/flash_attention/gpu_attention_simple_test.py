@@ -34,7 +34,7 @@ from jax.experimental.pallas.ops.attention import mha as pallas_mha
 )
 @pytest.mark.parametrize("block_size", [128])
 @pytest.mark.parametrize("use_pallas", [True, False])
-@pytest.mark.parametrize("causal", [False])
+@pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("sm_scale", [1.0])
 @pytest.mark.parametrize("bias_type", ["none"])
 def test_fwd_against_ref(
@@ -98,7 +98,7 @@ def test_fwd_against_ref(
 @pytest.mark.parametrize("bias_type", ["none"])
 @pytest.mark.parametrize("block_size", [128])
 @pytest.mark.parametrize("use_pallas", [True, False])
-@pytest.mark.parametrize("causal", [False])
+@pytest.mark.parametrize("causal", [True, False])
 def test_bwd_against_ref(
     batch_size: int,
     num_heads: int,
