@@ -114,9 +114,8 @@ def _mha_forward_kernel(
     # blocks of q is carried out by the grid.
     def body(start_k, carry):
         acc, m_prev, l_prev = carry
-        curr_k_slice = pl.dslice(start_k * block_k, block_k)
         # This is slow loop over kv, essentially a scan through.
-        k = pl.load(k_ref, (curr_k_slice, pl.dslice(None)))
+        k = pl.load(k_ref, (pl.dslice(start_k * block_k, block_k), pl.dslice(None)))
 
         qk = pl.dot(q, k.T)  # [block_q, block_k].
 
@@ -142,7 +141,7 @@ def _mha_forward_kernel(
         acc = (l_prev * l_rcp)[:, None] *  acc
         # p = p.astype(jnp.float16)
 
-        v = pl.load(v_ref, (curr_k_slice, pl.dslice(block_d)))
+        v = pl.load(v_ref, (pl.dslice(start_k * block_k, block_k), pl.dslice(block_d)))
         acc_curr = pl.dot(p.astype(v.dtype), v)
         acc = acc + acc_curr
         return acc, m_next, l_next
@@ -468,15 +467,13 @@ def _mha_backward_kernel(
     def outer_loop(start_k, _):
         dv = jnp.zeros([block_k, block_d], dtype=jnp.float32)
         dk = jnp.zeros([block_k, block_d], dtype=jnp.float32)
-        curr_k_slice = pl.ds(start_k * block_k, block_k)
-        k = pl.load(k_ref, (curr_k_slice, slice(None)))
-        v = pl.load(v_ref, (curr_k_slice, slice(None)))
+        k = pl.load(k_ref, (pl.ds(start_k * block_k, block_k), slice(None)))
+        v = pl.load(v_ref, (pl.ds(start_k * block_k, block_k), slice(None)))
         span_k = start_k * block_k + jnp.arange(block_k)
 
         def inner_loop(start_q, carry):
             dv, dk = carry
-            curr_q_slice = pl.ds(start_q * block_q, block_q)
-            q = pl.load(q_ref, (curr_q_slice, slice(None)))
+            q = pl.load(q_ref, ( pl.ds(start_q * block_q, block_q), slice(None)))
             qk = pl.dot(q, k.T)
 
             # These casts are needed to avoid precision issues.
@@ -492,22 +489,23 @@ def _mha_backward_kernel(
                 causal_mask = span_q[:, None] >= span_k[None, :]
                 qk = jnp.where(causal_mask, qk, DEFAULT_MASK_VALUE)
 
-            m = pl.load(m_ref, (curr_q_slice,))
+            m = pl.load(m_ref, ( pl.ds(start_q * block_q, block_q),))
             p = jnp.exp(qk - m[:, None]) #jnp.exp2(qk - m[:, None])
-            do = pl.load(do_scaled_ref, (curr_q_slice, slice(None)))
+            do = pl.load(do_scaled_ref, ( pl.ds(start_q * block_q, block_q), slice(None)))
             dv = dv + pl.dot(p.astype(do.dtype).T, do)
-            di = pl.load(delta_ref, (curr_q_slice,))
+            di = pl.load(delta_ref, (pl.ds(start_q * block_q, block_q),))
             dp = jnp.zeros((block_q, block_k), dtype=jnp.float32) - di[:, None]
             dp = dp + pl.dot(do, v.T)
             ds = p * dp
             if softmax_scale != 1.0:
                 ds = ds * softmax_scale
             dk = dk + pl.dot(ds.astype(q_ref.dtype).T, q)
-            dq = pl.load(dq_ref, (curr_q_slice, slice(None)),
+            dq = pl.load(dq_ref, (pl.ds(start_q * block_q, block_q), slice(None)),
                 eviction_policy="evict_last",
             )
             dq = dq + pl.dot(ds.astype(k.dtype), k).astype(dq.dtype)
-            pl.store(dq_ref, (curr_q_slice, slice(None)), dq, eviction_policy="evict_last")
+            pl.store(dq_ref, (pl.ds(start_q * block_q, block_q), 
+                              slice(None)), dq, eviction_policy="evict_last")
             return dv, dk
 
         if causal:
@@ -518,8 +516,8 @@ def _mha_backward_kernel(
                                pl.cdiv(seq_len, block_q),
                                inner_loop,
                                (dv, dk))
-        pl.store(dv_ref, (curr_k_slice, slice(None)), dv.astype(dv_ref.dtype))
-        pl.store(dk_ref, (curr_k_slice, slice(None)), dk.astype(dk_ref.dtype))
+        pl.store(dv_ref, (pl.ds(start_k * block_k, block_k), slice(None)), dv.astype(dv_ref.dtype))
+        pl.store(dk_ref, (pl.ds(start_k * block_k, block_k), slice(None)), dk.astype(dk_ref.dtype))
 
     lax.fori_loop(0, pl.cdiv(seq_len, block_k), outer_loop, None)
 
