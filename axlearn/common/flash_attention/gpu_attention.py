@@ -43,7 +43,7 @@ import numpy as np
 # pytype: enable=import-error  # pylint: enable=import-error
 
 Tensor = jax.Array
-DEFAULT_MASK_VALUE= -0.1 * float(np.finfo(np.dtype("float32")).max)
+DEFAULT_MASK_VALUE= -1.0e6
 
 
 def _mha_forward_kernel(
@@ -102,8 +102,7 @@ def _mha_forward_kernel(
     q = pl.load(q_ref, (curr_q_slice, pl.dslice(None)))
     # TODO: fix the segment mask for the case where seq length is not the whole
     # context.
-    qk_scale = softmax_scale
-    qk_scale *= 1.44269504  # 1/log(2)
+    qk_scale = 1.44269504  # 1/log(2)
     # In FlashAttention algorithm 1 there are 2 loops: slow over tiles of kv (size
     # Bc == block_k here), and fast over blocks of q (size Br == block_q here).
     # Here we only loop over blocks of kv to process entire seq_len, the loop over
@@ -113,10 +112,9 @@ def _mha_forward_kernel(
         # This is slow loop over kv, essentially a scan through.
         curr_k_slice = pl.dslice(start_k * block_k, block_k)
         k = pl.load(k_ref, (curr_k_slice, pl.dslice(None)))
-
         qk = pl.dot(q, k.T)  # [block_q, block_k].
-        if qk_scale != 1.:
-            qk *= qk_scale
+        if softmax_scale != 1.:
+            qk *= softmax_scale
         if bias_type == "matrix":
             b = pl.load(b_ref,(curr_q_slice, curr_k_slice),)
             qk += b
@@ -130,6 +128,7 @@ def _mha_forward_kernel(
         # Bring closer to XLA:GPU numerics.
         # These casts are needed to avoid precision issues.
         qk = qk.astype(jnp.float32)
+        qk = qk * qk_scale
         m_curr = qk.max(axis=-1)
         m_next = jnp.maximum(m_curr, m_prev)
         correction = jnp.exp2(m_prev - m_next)
