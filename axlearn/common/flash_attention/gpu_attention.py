@@ -92,7 +92,7 @@ def _mha_forward_kernel(
     assert bias_type == "none"
     # acc is the buffer where we accumulate the output on sram.
     # m_i and l_i (see FlashAttention paper) are updated during the k,v loop.
-    m_i = jnp.zeros(block_q, dtype=jnp.float32) - float('inf')
+    m_i = jnp.zeros(block_q, dtype=jnp.float32) + DEFAULT_MASK_VALUE
     l_i = jnp.zeros(block_q, dtype=jnp.float32)
     # acc is the buffer where we accumulate the output on sram.
     acc = jnp.zeros((block_q, block_d), dtype=jnp.float32)
@@ -102,9 +102,9 @@ def _mha_forward_kernel(
     # q tile has shape [block_q, block_d], block_d == head_dim.
     curr_q_slice = pl.dslice(start_q * block_q, block_q)
     q = pl.load(q_ref, (curr_q_slice, pl.dslice(None)))
-    qk_scale = softmax_scale * 1.44269504
+    # qk_scale = softmax_scale * 1.44269504
     # This is to make exp2 work.
-    q = q * qk_scale
+    # q = q * qk_scale
     # TODO: fix the segment mask for the case where seq length is not the whole
     # context.
 
@@ -132,9 +132,9 @@ def _mha_forward_kernel(
         qk = qk.astype(jnp.float32)
         m_curr = qk.max(axis=-1)
         m_next = jnp.maximum(m_curr, m_prev)
-        correction = jnp.exp2(m_prev - m_next)
+        correction = jnp.exp(m_prev - m_next) # jnp.exp2(m_prev - m_next)
         l_prev = l_prev * correction
-        p = jnp.exp2(qk - m_next[:, None])
+        p =  jnp.exp(qk - m_next[:, None])# jnp.exp2(qk - m_next[:, None])
         l_next = jnp.sum(p, axis=1) + l_prev
 
         l_rcp = 1.0 / l_next
@@ -507,12 +507,7 @@ def _mha_backward_kernel(
                 eviction_policy="evict_last",
             )
             dq = dq + pl.dot(ds.astype(k.dtype), k).astype(dq.dtype)
-            pl.store(
-                dq_ref,
-                (curr_q_slice, slice(None)),
-                dq,
-                eviction_policy="evict_last",
-            )
+            pl.store(dq_ref, (curr_q_slice, slice(None)), dq, eviction_policy="evict_last")
             return dv, dk
 
         if causal:

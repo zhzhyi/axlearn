@@ -51,11 +51,12 @@ MultiHeadAttentionImpl = Callable[[Tensor, Tensor, Tensor, Tensor], Tensor]
 
 
 def flash_attention_implementation(
-    backend: Literal["cpu", "tpu", "gpu"],
+    backend: Literal["cpu", "tpu", "gpu", "gpu_pallas"],
     *,
     causal: bool,
     softmax_scale: float,
     block_size: int = 128,
+    implementation: str = "native",
 ) -> MultiHeadAttentionImpl:
     """Returns a jitted "flash" multihead-attention implementation for the given backend.
 
@@ -66,7 +67,7 @@ def flash_attention_implementation(
         block_size: The size of the computation-block unit, only applies to the 'tpu' backend.
             A multiple of 128, and should be less than the target sequence length.
             Smaller values are more memory efficient but less compute efficient.
-
+        implementation: only useful for the 'gpu' backend, which can be 'native' or 'pallas'.
     Returns:
         A jitted function implementing multi-head attention for the given backend.
 
@@ -74,21 +75,33 @@ def flash_attention_implementation(
         NotImplementedError: If implementation for the backend is not available.
     """
     if backend == "gpu":
-        # Lazy import GPU flash-attention to avoid file-level dependency on jax-triton.
-        # pylint: disable-next=import-outside-toplevel
-        from axlearn.common.flash_attention.gpu_attention import (
-            flash_attention as gpu_flash_attention,
-        )
-
-        # shard_map-decorated function needs to be jitted.
-        @jax.jit
-        def jit_attn(query, key, value, bias):
-            return gpu_flash_attention(
-                query, key, value, bias=bias, causal=causal, softmax_scale=softmax_scale
+        if implementation == "native":
+            # Lazy import GPU flash-attention to avoid file-level dependency on jax-triton.
+            # pylint: disable-next=import-outside-toplevel
+            from axlearn.common.flash_attention.gpu_attention import (
+                flash_attention as gpu_flash_attention,
             )
 
-        return jit_attn
+            # shard_map-decorated function needs to be jitted.
+            @jax.jit
+            def jit_attn(query, key, value, bias):
+                return gpu_flash_attention(
+                    query, key, value, bias=bias, causal=causal, softmax_scale=softmax_scale
+                )
 
+            return jit_attn
+        elif implementation == "pallas":
+            from jax.experimental.pallas.ops.attention import mha as pallas_mha
+            # shard_map-decorated function needs to be jitted.
+            @jax.jit
+            def jit_attn(query, key, value, bias):
+                # Bias is not supported in pallas.
+                return pallas_mha(
+                    query, key, value, None, causal=causal, softmax_scale=softmax_scale
+                )
+            return jit_attn
+        else:
+            raise NotImplementedError(f"Backend ({backend}) does not have {implementation}.")
     elif backend == "tpu":
         # TODO(tom_gunter): See if we can do better block-size tuning.
         block_sizes = BlockSizes(
