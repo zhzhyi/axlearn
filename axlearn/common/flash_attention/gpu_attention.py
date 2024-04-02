@@ -118,7 +118,8 @@ def _mha_forward_kernel(
         k = pl.load(k_ref, (pl.dslice(start_k * block_k, block_k), pl.dslice(None)))
 
         qk = pl.dot(q, k.T)  # [block_q, block_k].
-
+        if softmax_scale != 1.:
+            qk *= softmax_scale
         # TODO: fix the segment mask for the case where seg length is not seq_len.
         if causal:
             span_q = start_q * block_q + jnp.arange(block_q)
@@ -132,19 +133,18 @@ def _mha_forward_kernel(
         m_curr = qk.max(axis=-1)
         m_next = jnp.maximum(m_curr, m_prev)
         correction = jnp.exp(m_prev - m_next) # jnp.exp2(m_prev - m_next)
-        l_prev = l_prev * correction
+        l_prev_corr = l_prev * correction
         p =  jnp.exp(qk - m_next[:, None])# jnp.exp2(qk - m_next[:, None])
-        l_next = jnp.sum(p, axis=1) + l_prev
-
+        l_next = jnp.sum(p, axis=1) + l_prev_corr
         l_rcp = 1.0 / l_next
         p = p * l_rcp[:, None]
-        acc = (l_prev * l_rcp)[:, None] *  acc
+        acc_prev = (l_prev_corr * l_rcp)[:, None] *  acc
         # p = p.astype(jnp.float16)
 
         v = pl.load(v_ref, (pl.dslice(start_k * block_k, block_k), pl.dslice(block_d)))
         acc_curr = pl.dot(p.astype(v.dtype), v)
-        acc = acc + acc_curr
-        return acc, m_next, l_next
+        acc_next = acc_prev + acc_curr
+        return acc_next, m_next, l_next
 
     if causal:
         upper_bound = lax.div(block_q * start_q, block_k) + 1
@@ -241,14 +241,15 @@ def flash_attention(
         block_k=block_k,
         block_d=head_dim,
     )
-    out_shape = jax.ShapeDtypeStruct(shape=query.shape, dtype=query.dtype)
-    out_specs = pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim))
     in_specs = [
             pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # query
             pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # key
             pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim)),  # value
             bias_block_spec,  # bias
         ]
+    out_shape = jax.ShapeDtypeStruct(shape=query.shape, dtype=query.dtype)
+    out_specs = pl.BlockSpec(lambda _, j, k: (j, 0, k, 0), (None, seq_len, None, head_dim))
+
     return pl.pallas_call(
         kernel,
         grid=grid_,
@@ -373,6 +374,7 @@ def _preprocess_backward_kernel(
     pl.store(delta_ref, (off_m,), delta.astype(delta_ref.dtype))
 
 
+@jax.named_scope("preprocess_backward")
 def _preprocess_backward(
     out,
     do,
