@@ -128,7 +128,6 @@ class FlashAttention(GroupedQueryAttention):
             causal=cfg.causal,
             softmax_scale=1.0,
             block_size=cfg.tpu_block_size,
-            implementation="pallas",
         )
 
         # We need to manually partition pallas | jax-triton calls.
