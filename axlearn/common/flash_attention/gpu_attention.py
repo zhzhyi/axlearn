@@ -473,7 +473,8 @@ def _mha_backward_kernel(
 
         def inner_loop(start_q, carry):
             dv, dk = carry
-            q = pl.load(q_ref, ( pl.ds(start_q * block_q, block_q), slice(None)))
+            slice_q = pl.ds(start_q * block_q, block_q)
+            q = pl.load(q_ref, (slice_q, slice(None)))
             qk = pl.dot(q, k.T)
 
             # These casts are needed to avoid precision issues.
@@ -488,22 +489,22 @@ def _mha_backward_kernel(
                 causal_mask = span_q[:, None] >= span_k[None, :]
                 qk = jnp.where(causal_mask, qk, DEFAULT_MASK_VALUE)
 
-            m = pl.load(m_ref, ( pl.ds(start_q * block_q, block_q),))
+            m = pl.load(m_ref, (slice_q,))
             p = jnp.exp(qk - m[:, None])
-            do = pl.load(do_scaled_ref, ( pl.ds(start_q * block_q, block_q), slice(None)))
+            do = pl.load(do_scaled_ref, (slice_q, slice(None)))
             dv = dv + pl.dot(p.astype(do.dtype).T, do)
-            di = pl.load(delta_ref, (pl.ds(start_q * block_q, block_q),))
+            di = pl.load(delta_ref, (slice_q,))
             dp = jnp.zeros((block_q, block_k), dtype=jnp.float32) - di[:, None]
             dp = dp + pl.dot(do, v.T)
             ds = p * dp
             if softmax_scale != 1.0:
                 ds = ds * softmax_scale
             dk = dk + pl.dot(ds.astype(q_ref.dtype).T, q)
-            dq = pl.load(dq_ref, (pl.ds(start_q * block_q, block_q), slice(None)),
+            dq = pl.load(dq_ref, (slice_q, slice(None)),
                 eviction_policy="evict_last",
             )
             dq = dq + pl.dot(ds.astype(k.dtype), k).astype(dq.dtype)
-            pl.store(dq_ref, (pl.ds(start_q * block_q, block_q), 
+            pl.store(dq_ref, (slice_q,
                               slice(None)), dq, eviction_policy="evict_last")
             return dv, dk
 
