@@ -37,6 +37,8 @@ def get_trainer_kwargs(model_size: str, *, vocab_size: int) -> Dict[str, Any]:
                 hidden_dim=8,
                 ffn_dim=scaled_hidden_dim(scale=8 / 3, round_up_to_multiples_of=16),
                 num_heads=4,
+                num_kv_heads=4,
+                flash_attention=False,
                 vocab_size=32,
             ),
             learner_kwargs=dict(
@@ -54,6 +56,33 @@ def get_trainer_kwargs(model_size: str, *, vocab_size: int) -> Dict[str, Any]:
                 num_layers=32,
                 hidden_dim=128 * 32,
                 num_heads=32,
+                num_kv_heads=8,
+                flash_attention=False,
+            ),
+            learner_kwargs=dict(peak_lr=3e-4, weight_decay=0.1),
+            train_batch_size=64,# 4 * 1024 * 1024 // MAX_SEQUENCE_LENGTH,  # 4M tokens.
+            max_step=500_000,  # 2T tokens // 4M tokens/step.
+            mesh_shape=mesh_shape_from_axes(fsdp=-1),
+            mesh_rules=(
+                # tpu-v4. step time: 3.03s.
+                ("tpu-v4-(1024|2048)", mesh_shape_from_axes(data=-1, fsdp=16)),
+                # tpu-v5e. step time: TBD.
+                ("tpu-v5litepod-256", mesh_shape_from_axes(data=-1, fsdp=16)),
+                # H100/A100 80G. Maximum per-node batch size = 64, hence need >= 32 nodes.
+                (
+                    "gpu-(p5.48xlarge|p4de.24xlarge)-(256|512|1024)",
+                    mesh_shape_from_axes(data=-1, fsdp=8),
+                ),
+            ),
+        )
+    elif model_size == "7B-flash":
+        trainer_kwargs = dict(
+            model_kwargs=dict(
+                num_layers=32,
+                hidden_dim=128 * 32,
+                num_heads=32,
+                num_kv_heads=8,
+                flash_attention=True,
             ),
             learner_kwargs=dict(peak_lr=3e-4, weight_decay=0.1),
             train_batch_size=64,# 4 * 1024 * 1024 // MAX_SEQUENCE_LENGTH,  # 4M tokens.
@@ -89,6 +118,8 @@ def model_config(
     num_layers: int,
     hidden_dim: int,
     num_heads: int,
+    num_kv_heads: int,
+    flash_attention: bool,
     vocab_size: int,
     dropout_rate: float = 0.0,
     ffn_dim: Optional[Union[int, config.FunctionConfigBase]] = None,
@@ -99,6 +130,7 @@ def model_config(
         num_layers: The number of Transformer Layers.
         hidden_dim: The Transformer layer input/output dim.
         num_heads: The number of attention heads.
+        num_kv_heads: The number of attention kv heads.
         vocab_size: The vocabulary size.
         dropout_rate: The dropout rate applied throughout the model.
             Defaults to 0.0 (i.e. no dropout).
@@ -116,6 +148,7 @@ def model_config(
         num_layers=num_layers,
         hidden_dim=hidden_dim,
         num_heads=num_heads,
+        num_kv_heads=num_kv_heads,
         vocab_size=vocab_size,
         stack_cfg=RepeatedTransformerLayer.default_config(),
         activation_fn=activation_fn,
@@ -124,10 +157,6 @@ def model_config(
         dropout_rate=dropout_rate,
         emb_cfg=TransformerTextEmbeddings.default_config().set(pos_emb=None),
         attention_mask=CausalAttentionLogitBiasLayer.default_config(),
-        # RoPE embeddings: https://arxiv.org/abs/2104.09864.
-        attention_qkv_linear=RoFormerQKVLinear.default_config().set(
-            input_linear=FusedQKVLinear.default_config().set(cache_dtype=STEP_DTYPE),
-            rotary_value=False,
-        ),
+        use_flash_attention_impl = flash_attention,
     )
     return cfg

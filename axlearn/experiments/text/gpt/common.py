@@ -32,12 +32,18 @@ from axlearn.common.attention import (
     BaseQKVLinear,
     CausalAttentionLogitBiasLayer,
     FusedQKVLinear,
+    FusedGroupedQKVLinear,
+    GroupedQueryAttention,
     RepeatedTransformerLayer,
+    RoFormerQKVLinear,
+    RoFormerSinusoidalPositionalEmbedding,
     TransformerLayer,
+    TransformerAttentionLayer,
     build_remat_spec,
     set_double_shard_weights_config,
 )
-from axlearn.common.checkpointer import every_n_steps_policy
+
+from axlearn.common.checkpointer import every_n_steps_policyTransformerAttentionLayer
 from axlearn.common.config import (
     FunctionConfigBase,
     InstantiableConfig,
@@ -49,6 +55,7 @@ from axlearn.common.decoder import Decoder
 from axlearn.common.embedding import TransformerTextEmbeddings
 from axlearn.common.evaler import BaseMetricCalculator, ModelSummaryAccumulator, SpmdEvaler
 from axlearn.common.evaler import every_n_steps_policy as eval_every_n_steps_policy
+from axlearn.common.flash_attention.layer import FlashAttention
 from axlearn.common.layers import BaseNormalizationLayer, set_bias_recursively, set_norm_recursively
 from axlearn.common.param_init import PARAM_REGEXP_WEIGHT, DefaultInitializer, WeightInitializer
 from axlearn.common.summary_writer import BaseWriter
@@ -159,6 +166,7 @@ def model_config(
     *,
     hidden_dim: int,
     num_heads: int,
+    num_kv_heads: int,
     num_layers: int,
     vocab_size: int,
     activation_fn: Union[str, Sequence[str]],
@@ -168,11 +176,11 @@ def model_config(
     stack_cfg: causal_lm.TransformerStackConfig = RepeatedTransformerLayer.default_config(),
     emb_cfg: TransformerTextEmbeddings.Config = TransformerTextEmbeddings.default_config(),
     attention_mask: AttentionLogitBiasLayer.Config = CausalAttentionLogitBiasLayer.default_config(),
-    attention_qkv_linear: Optional[BaseQKVLinear.Config] = FusedQKVLinear.default_config(),
     z_loss_scale: float = 0.0,
     ffn_structure: str = "prenorm",
     atten_structure: str = "prenorm",
     atten_logit_cap: Optional[float] = None,
+    use_flash_attention_impl: bool = False,
 ) -> causal_lm.Model.Config:
     """Returns an LM model config based on the given hyperparams.
 
@@ -203,17 +211,43 @@ def model_config(
     Returns:
         A causal LM config.
     """
+    multihead_attention_cfg: GroupedQueryAttention.Config = (
+        FlashAttention.default_config()
+        if use_flash_attention_impl
+        else GroupedQueryAttention.default_config()
+    )
     layer_cfg = TransformerLayer.default_config()
     # Feed-forward.
     layer_cfg.feed_forward.activation = activation_fn
     layer_cfg.feed_forward.hidden_dim = ffn_dim
     layer_cfg.feed_forward.structure = ffn_structure
     # Attention.
-    layer_cfg.self_attention.attention.num_heads = num_heads
-    if attention_qkv_linear is not None:
-        layer_cfg.self_attention.attention.input_linear = attention_qkv_linear
-    layer_cfg.self_attention.structure = atten_structure
-    layer_cfg.self_attention.attention.atten_logit_cap = atten_logit_cap
+    attention_layer_cfg = TransformerAttentionLayer.default_config().set(
+        attention=multihead_attention_cfg.set(
+            # Use q/k-norm in keeping with:
+            # <https://arxiv.org/abs/2309.14322>
+            # <https://quip-apple.com/kGOSA20L3pNv>
+            num_heads=num_heads,
+            input_linear=RoFormerQKVLinear.default_config().set(
+                cache_dtype=jnp.bfloat16,
+                input_linear=FusedGroupedQKVLinear.default_config().set(
+                    cache_dtype=jnp.bfloat16,
+                    num_kv_heads=num_kv_heads,
+                ),
+                # Set theta to 500k for better long-context RoPE.
+                # <https://arxiv.org/abs/2309.16039>
+                # <https://quip-apple.com/4sgwAQYkMPpO>
+                rope_pos_emb_layer=(
+                    RoFormerSinusoidalPositionalEmbedding.default_config().set(theta=500000.0)
+                ),
+                # Do not apply position encodings to the values, in keeping with LLaMA2.
+                rotary_value=False,
+            ),
+            atten_logit_cap=atten_logit_cap,
+        ),
+        structure=atten_structure,
+    )
+    layer_cfg.self_attention = attention_layer_cfg
     if stack_cfg.klass is RepeatedTransformerLayer:
         # Enable remat to reduce memory usage for larger models.
         layer_cfg.remat_spec = build_remat_spec(stack_cfg)
