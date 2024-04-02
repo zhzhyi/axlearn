@@ -43,7 +43,7 @@ import numpy as np
 # pytype: enable=import-error  # pylint: enable=import-error
 
 Tensor = jax.Array
-DEFAULT_MASK_VALUE= -0.7 * float(np.finfo(np.dtype("float32")).max)
+DEFAULT_MASK_VALUE= -0.1 * float(np.finfo(np.dtype("float32")).max)
 
 
 def _mha_forward_kernel(
@@ -102,7 +102,8 @@ def _mha_forward_kernel(
     q = pl.load(q_ref, (curr_q_slice, pl.dslice(None)))
     # TODO: fix the segment mask for the case where seq length is not the whole
     # context.
-
+    qk_scale = softmax_scale
+    qk_scale *= 1.44269504  # 1/log(2)
     # In FlashAttention algorithm 1 there are 2 loops: slow over tiles of kv (size
     # Bc == block_k here), and fast over blocks of q (size Br == block_q here).
     # Here we only loop over blocks of kv to process entire seq_len, the loop over
@@ -114,8 +115,8 @@ def _mha_forward_kernel(
         k = pl.load(k_ref, (curr_k_slice, pl.dslice(None)))
 
         qk = pl.dot(q, k.T)  # [block_q, block_k].
-        if softmax_scale != 1.:
-            qk *= softmax_scale
+        if qk_scale != 1.:
+            qk *= qk_scale
         if bias_type == "matrix":
             b = pl.load(b_ref,(curr_q_slice, curr_k_slice),)
             qk += b
@@ -131,9 +132,9 @@ def _mha_forward_kernel(
         qk = qk.astype(jnp.float32)
         m_curr = qk.max(axis=-1)
         m_next = jnp.maximum(m_curr, m_prev)
-        correction = jnp.exp(m_prev - m_next)
+        correction = jnp.exp2(m_prev - m_next)
         l_prev_corr = l_prev * correction
-        p =  jnp.exp(qk - m_next[:, None])
+        p =  jnp.exp2(qk - m_next[:, None])
         l_next = jnp.sum(p, axis=1) + l_prev_corr
         l_rcp = 1.0 / l_next
         p = p * l_rcp[:, None]
