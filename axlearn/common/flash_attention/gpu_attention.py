@@ -102,7 +102,7 @@ def _mha_forward_kernel(
     # q tile has shape [block_q, block_d], block_d == head_dim.
     curr_q_slice = pl.dslice(start_q * block_q, block_q)
     q = pl.load(q_ref, (curr_q_slice, pl.dslice(None)))
-    # qk_scale = softmax_scale * 1.44269504
+    qk_scale = softmax_scale * 1.44269504
     # This is to make exp2 work.
     # q = q * qk_scale
     # TODO: fix the segment mask for the case where seq length is not the whole
@@ -118,8 +118,8 @@ def _mha_forward_kernel(
         k = pl.load(k_ref, (pl.dslice(start_k * block_k, block_k), pl.dslice(None)))
 
         qk = pl.dot(q, k.T)  # [block_q, block_k].
-        if softmax_scale != 1.:
-            qk *= softmax_scale
+        if qk_scale != 1.:
+            qk *= qk_scale
         # TODO: fix the segment mask for the case where seg length is not seq_len.
         if causal:
             span_q = start_q * block_q + jnp.arange(block_q)
@@ -132,9 +132,9 @@ def _mha_forward_kernel(
         qk = qk.astype(jnp.float32)
         m_curr = qk.max(axis=-1)
         m_next = jnp.maximum(m_curr, m_prev)
-        correction = jnp.exp(m_prev - m_next) # jnp.exp2(m_prev - m_next)
+        correction = jnp.exp2(m_prev - m_next)
         l_prev_corr = l_prev * correction
-        p =  jnp.exp(qk - m_next[:, None])# jnp.exp2(qk - m_next[:, None])
+        p =  jnp.exp2(qk - m_next[:, None])
         l_next = jnp.sum(p, axis=1) + l_prev_corr
         l_rcp = 1.0 / l_next
         p = p * l_rcp[:, None]
