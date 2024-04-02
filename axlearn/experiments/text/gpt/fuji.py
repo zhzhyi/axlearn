@@ -12,9 +12,7 @@ from typing import Any, Dict, Optional, Union
 from axlearn.common import causal_lm, config
 from axlearn.common.attention import (
     CausalAttentionLogitBiasLayer,
-    FusedQKVLinear,
     RepeatedTransformerLayer,
-    RoFormerQKVLinear,
 )
 from axlearn.common.embedding import TransformerTextEmbeddings
 from axlearn.common.layers import RMSNorm
@@ -22,7 +20,7 @@ from axlearn.experiments.text.gpt.common import STEP_DTYPE, learner_config, mesh
 from axlearn.experiments.text.gpt.common import model_config as common_model_config
 from axlearn.experiments.text.gpt.common import scaled_hidden_dim
 
-MODEL_SIZES = ("test", "7B")
+MODEL_SIZES = ("test", "7B", "7B-flash")
 MAX_SEQUENCE_LENGTH = 2048
 
 
@@ -60,7 +58,7 @@ def get_trainer_kwargs(model_size: str, *, vocab_size: int) -> Dict[str, Any]:
                 flash_attention=False,
             ),
             learner_kwargs=dict(peak_lr=3e-4, weight_decay=0.1),
-            train_batch_size=64,# 4 * 1024 * 1024 // MAX_SEQUENCE_LENGTH,  # 4M tokens.
+            train_batch_size=4 * 1024 * 1024 // MAX_SEQUENCE_LENGTH,  # 4M tokens.
             max_step=500_000,  # 2T tokens // 4M tokens/step.
             mesh_shape=mesh_shape_from_axes(fsdp=-1),
             mesh_rules=(
@@ -85,7 +83,7 @@ def get_trainer_kwargs(model_size: str, *, vocab_size: int) -> Dict[str, Any]:
                 flash_attention=True,
             ),
             learner_kwargs=dict(peak_lr=3e-4, weight_decay=0.1),
-            train_batch_size=64,# 4 * 1024 * 1024 // MAX_SEQUENCE_LENGTH,  # 4M tokens.
+            train_batch_size=4 * 1024 * 1024 // MAX_SEQUENCE_LENGTH,  # 4M tokens.
             max_step=500_000,  # 2T tokens // 4M tokens/step.
             mesh_shape=mesh_shape_from_axes(fsdp=-1),
             mesh_rules=(

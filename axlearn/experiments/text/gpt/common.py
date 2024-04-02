@@ -29,9 +29,7 @@ from axlearn.common import (
 )
 from axlearn.common.attention import (
     AttentionLogitBiasLayer,
-    BaseQKVLinear,
     CausalAttentionLogitBiasLayer,
-    FusedQKVLinear,
     FusedGroupedQKVLinear,
     GroupedQueryAttention,
     RepeatedTransformerLayer,
@@ -43,7 +41,7 @@ from axlearn.common.attention import (
     set_double_shard_weights_config,
 )
 
-from axlearn.common.checkpointer import every_n_steps_policyTransformerAttentionLayer
+from axlearn.common.checkpointer import every_n_steps_policy
 from axlearn.common.config import (
     FunctionConfigBase,
     InstantiableConfig,
