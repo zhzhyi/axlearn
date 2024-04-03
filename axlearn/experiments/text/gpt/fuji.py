@@ -13,6 +13,7 @@ from axlearn.common import causal_lm, config
 from axlearn.common.attention import (
     CausalAttentionLogitBiasLayer,
     FusedGroupedQKVLinear,
+    FusedQKVLinear,
     RoFormerQKVLinear,
     RepeatedTransformerLayer,
 )
@@ -158,10 +159,9 @@ def model_config(
         attention_mask=CausalAttentionLogitBiasLayer.default_config(),
         # RoPE embeddings: https://arxiv.org/abs/2104.09864.
         attention_qkv_linear=RoFormerQKVLinear.default_config().set(
-            input_linear=FusedGroupedQKVLinear.default_config().set(
+            input_linear=FusedQKVLinear.default_config().set(
                     cache_dtype=STEP_DTYPE,
-                    num_kv_heads=num_kv_heads,
-                ),
+            ),
             rotary_value=False,	
         ),
         use_flash_attention_impl = flash_attention,
