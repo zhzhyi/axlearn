@@ -114,10 +114,10 @@ def named_trainer_configs() -> Dict[str, TrainerConfigFn]:
     config_map["fuji-7B-single"] = lambda: cfg
 
     # Update the flash attention config for fuji-7B.
-    cfg: SpmdTrainer.Config = config_map["fuji-7B-flash"]().clone()
+    cfg2: SpmdTrainer.Config = config_map["fuji-7B-flash"]().clone()
     # pytype: enable=annotation-type-mismatch
-    cfg.input.batcher.global_batch_size = 32
-    for evaler in cfg.evalers.values():
+    cfg2.input.batcher.global_batch_size = 32
+    for evaler in cfg2.evalers.values():
         evaler.input.batcher.global_batch_size = 32
-    config_map["fuji-7B-flash-single"] = lambda: cfg    
+    config_map["fuji-7B-flash-single"] = lambda: cfg2
     return config_map
