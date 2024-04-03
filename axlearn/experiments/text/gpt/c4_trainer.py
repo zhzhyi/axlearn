@@ -112,8 +112,8 @@ def named_trainer_configs() -> Dict[str, TrainerConfigFn]:
         if "7B" not in config_name:
             continue
         cfg: SpmdTrainer.Config = config_fn().clone()
-        cfg.input.batcher.global_batch_size = 64
+        cfg.input.batcher.global_batch_size = 32
         for evaler in cfg.evalers.values():
-            evaler.input.batcher.global_batch_size = 64
+            evaler.input.batcher.global_batch_size = 32
         new_config_map[config_name + "-single"]  = lambda: cfg
     return new_config_map

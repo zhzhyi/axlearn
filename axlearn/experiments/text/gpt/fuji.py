@@ -12,6 +12,8 @@ from typing import Any, Dict, Optional, Union
 from axlearn.common import causal_lm, config
 from axlearn.common.attention import (
     CausalAttentionLogitBiasLayer,
+    FusedGroupedQKVLinear,
+    RoFormerQKVLinear,
     RepeatedTransformerLayer,
 )
 from axlearn.common.embedding import TransformerTextEmbeddings
@@ -54,7 +56,7 @@ def get_trainer_kwargs(model_size: str, *, vocab_size: int) -> Dict[str, Any]:
                 num_layers=32,
                 hidden_dim=128 * 32,
                 num_heads=32,
-                num_kv_heads=8,
+                num_kv_heads=32,
                 flash_attention=False,
             ),
             learner_kwargs=dict(peak_lr=3e-4, weight_decay=0.1),
@@ -79,7 +81,7 @@ def get_trainer_kwargs(model_size: str, *, vocab_size: int) -> Dict[str, Any]:
                 num_layers=32,
                 hidden_dim=128 * 32,
                 num_heads=32,
-                num_kv_heads=8,
+                num_kv_heads=32,
                 flash_attention=True,
             ),
             learner_kwargs=dict(peak_lr=3e-4, weight_decay=0.1),
@@ -146,7 +148,6 @@ def model_config(
         num_layers=num_layers,
         hidden_dim=hidden_dim,
         num_heads=num_heads,
-        num_kv_heads=num_kv_heads,
         vocab_size=vocab_size,
         stack_cfg=RepeatedTransformerLayer.default_config(),
         activation_fn=activation_fn,
@@ -155,6 +156,14 @@ def model_config(
         dropout_rate=dropout_rate,
         emb_cfg=TransformerTextEmbeddings.default_config().set(pos_emb=None),
         attention_mask=CausalAttentionLogitBiasLayer.default_config(),
+        # RoPE embeddings: https://arxiv.org/abs/2104.09864.
+        attention_qkv_linear=RoFormerQKVLinear.default_config().set(
+            input_linear=FusedGroupedQKVLinear.default_config().set(
+                    cache_dtype=STEP_DTYPE,
+                    num_kv_heads=num_kv_heads,
+                ),
+            rotary_value=False,	
+        ),
         use_flash_attention_impl = flash_attention,
     )
     return cfg

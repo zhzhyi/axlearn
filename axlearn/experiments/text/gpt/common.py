@@ -31,7 +31,9 @@ from axlearn.common.attention import (
     AttentionLogitBiasLayer,
     CausalAttentionLogitBiasLayer,
     FusedGroupedQKVLinear,
+    FusedQKVLinear,
     GroupedQueryAttention,
+    BaseQKVLinear,
     RepeatedTransformerLayer,
     RoFormerQKVLinear,
     RoFormerSinusoidalPositionalEmbedding,
@@ -164,7 +166,6 @@ def model_config(
     *,
     hidden_dim: int,
     num_heads: int,
-    num_kv_heads: int,
     num_layers: int,
     vocab_size: int,
     activation_fn: Union[str, Sequence[str]],
@@ -173,6 +174,7 @@ def model_config(
     dropout_rate: float = 0.0,
     stack_cfg: causal_lm.TransformerStackConfig = RepeatedTransformerLayer.default_config(),
     emb_cfg: TransformerTextEmbeddings.Config = TransformerTextEmbeddings.default_config(),
+    attention_qkv_linear: Optional[BaseQKVLinear.Config] = FusedGroupedQKVLinear.default_config(),
     attention_mask: AttentionLogitBiasLayer.Config = CausalAttentionLogitBiasLayer.default_config(),
     z_loss_scale: float = 0.0,
     ffn_structure: str = "prenorm",
@@ -226,21 +228,7 @@ def model_config(
             # <https://arxiv.org/abs/2309.14322>
             # <https://quip-apple.com/kGOSA20L3pNv>
             num_heads=num_heads,
-            input_linear=RoFormerQKVLinear.default_config().set(
-                cache_dtype=jnp.bfloat16,
-                input_linear=FusedGroupedQKVLinear.default_config().set(
-                    cache_dtype=jnp.bfloat16,
-                    num_kv_heads=num_kv_heads,
-                ),
-                # Set theta to 500k for better long-context RoPE.
-                # <https://arxiv.org/abs/2309.16039>
-                # <https://quip-apple.com/4sgwAQYkMPpO>
-                rope_pos_emb_layer=(
-                    RoFormerSinusoidalPositionalEmbedding.default_config().set(theta=500000.0)
-                ),
-                # Do not apply position encodings to the values, in keeping with LLaMA2.
-                rotary_value=False,
-            ),
+            input_linear=attention_qkv_linear,
             atten_logit_cap=atten_logit_cap,
         ),
         structure=atten_structure,
