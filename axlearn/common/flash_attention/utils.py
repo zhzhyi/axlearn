@@ -51,7 +51,7 @@ MultiHeadAttentionImpl = Callable[[Tensor, Tensor, Tensor, Tensor], Tensor]
 
 
 def flash_attention_implementation(
-    backend: Literal["cpu", "tpu", "gpu", "gpu_pallas"],
+    backend: Literal["cpu", "tpu", "gpu"],
     *,
     causal: bool,
     softmax_scale: float,

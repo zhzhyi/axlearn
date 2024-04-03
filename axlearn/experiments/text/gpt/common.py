@@ -239,12 +239,14 @@ def model_config(
     layer_cfg.feed_forward.structure = ffn_structure
     # Attention.
     if not use_flash_attention_impl:
+        print("Using the default Attention implementation.")
         layer_cfg.self_attention.attention.num_heads = num_heads
         if attention_qkv_linear is not None:
             layer_cfg.self_attention.attention.input_linear = attention_qkv_linear
         layer_cfg.self_attention.structure = atten_structure
         layer_cfg.self_attention.attention.atten_logit_cap = atten_logit_cap
     else:
+        print("Using the flash Attention implementation.")
         attention_layer_cfg = TransformerAttentionLayer.default_config().set(
             attention=FlashAttention.default_config().set(
                 # Use q/k-norm in keeping with:
@@ -253,6 +255,7 @@ def model_config(
                 num_heads=num_heads,
                 input_linear=attention_qkv_linear,
                 atten_logit_cap=atten_logit_cap,
+                causal=True,
             ),
             structure=atten_structure,
         )
