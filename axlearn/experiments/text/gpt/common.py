@@ -232,11 +232,6 @@ def model_config(
     Returns:
         A causal LM config.
     """
-    multihead_attention_cfg: GroupedQueryAttention.Config = (
-        FlashAttention.default_config()
-        if use_flash_attention_impl
-        else GroupedQueryAttention.default_config()
-    )
     layer_cfg = TransformerLayer.default_config()
     # Feed-forward.
     layer_cfg.feed_forward.activation = activation_fn
@@ -251,7 +246,7 @@ def model_config(
         layer_cfg.self_attention.attention.atten_logit_cap = atten_logit_cap
     else:
         attention_layer_cfg = TransformerAttentionLayer.default_config().set(
-            attention=multihead_attention_cfg.set(
+            attention=FlashAttention.default_config().set(
                 # Use q/k-norm in keeping with:
                 # <https://arxiv.org/abs/2309.14322>
                 # <https://quip-apple.com/kGOSA20L3pNv>

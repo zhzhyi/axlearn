@@ -162,8 +162,8 @@ def model_config(
             input_linear=FusedQKVLinear.default_config().set(
                     cache_dtype=STEP_DTYPE,
             ),
-            rotary_value=False,	
+            rotary_value=False,
         ),
-        use_flash_attention_impl = flash_attention,
+        use_flash_attention_impl=flash_attention,
     )
     return cfg
