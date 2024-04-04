@@ -57,7 +57,7 @@ def get_trainer_kwargs(model_size: str, *, vocab_size: int) -> Dict[str, Any]:
                 num_layers=32,
                 hidden_dim=128 * 32,
                 num_heads=32,
-                num_kv_heads=32,
+                num_kv_heads=8,
                 flash_attention=False,
             ),
             learner_kwargs=dict(peak_lr=3e-4, weight_decay=0.1),
@@ -82,7 +82,7 @@ def get_trainer_kwargs(model_size: str, *, vocab_size: int) -> Dict[str, Any]:
                 num_layers=32,
                 hidden_dim=128 * 32,
                 num_heads=32,
-                num_kv_heads=32,
+                num_kv_heads=8,
                 flash_attention=True,
             ),
             learner_kwargs=dict(peak_lr=3e-4, weight_decay=0.1),
@@ -159,8 +159,9 @@ def model_config(
         attention_mask=CausalAttentionLogitBiasLayer.default_config(),
         # RoPE embeddings: https://arxiv.org/abs/2104.09864.
         attention_qkv_linear=RoFormerQKVLinear.default_config().set(
-            input_linear=FusedQKVLinear.default_config().set(
+            input_linear=FusedGroupedQKVLinear.default_config().set(
                     cache_dtype=STEP_DTYPE,
+                    num_kv_heads=num_kv_heads,
             ),
             rotary_value=False,
         ),

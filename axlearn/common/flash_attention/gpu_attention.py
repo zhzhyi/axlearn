@@ -228,7 +228,7 @@ def flash_attention(
         num_warps_ = 4 if head_dim <= 64 else 8
     num_stages_ = num_stages
     if num_stages_ is None:
-        num_stages_ = 4
+        num_stages_ = 2
     kernel = functools.partial(
         _mha_forward_kernel,
         softmax_scale=softmax_scale,
@@ -300,7 +300,7 @@ def _mha_forward(
         num_warps_ = 4 if head_dim <= 64 else 8
     num_stages_ = num_stages
     if num_stages is None:
-        num_stages_ = 4
+        num_stages_ = 2
     kernel = functools.partial(
         _mha_forward_kernel,
         softmax_scale=softmax_scale,
@@ -398,7 +398,7 @@ def _preprocess_backward(
             pl.BlockSpec(lambda _, j, k: (j, k, 0), (None, None, seq_len)),
         ],
         num_warps=8,
-        num_stages=3,
+        num_stages=2,
         out_shape=out_shape,
         debug=debug,
         interpret=interpret,

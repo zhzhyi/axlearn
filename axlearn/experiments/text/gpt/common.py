@@ -31,13 +31,10 @@ from axlearn.common import (
 from axlearn.common.attention import (
     AttentionLogitBiasLayer,
     CausalAttentionLogitBiasLayer,
-    FusedGroupedQKVLinear,
     FusedQKVLinear,
     GroupedQueryAttention,
     BaseQKVLinear,
     RepeatedTransformerLayer,
-    RoFormerQKVLinear,
-    RoFormerSinusoidalPositionalEmbedding,
     TransformerLayer,
     TransformerAttentionLayer,
     build_remat_spec,
@@ -195,7 +192,7 @@ def model_config(
     dropout_rate: float = 0.0,
     stack_cfg: causal_lm.TransformerStackConfig = RepeatedTransformerLayer.default_config(),
     emb_cfg: TransformerTextEmbeddings.Config = TransformerTextEmbeddings.default_config(),
-    attention_qkv_linear: Optional[BaseQKVLinear.Config] = FusedGroupedQKVLinear.default_config(),
+    attention_qkv_linear: Optional[BaseQKVLinear.Config] = FusedQKVLinear.default_config(),
     attention_mask: AttentionLogitBiasLayer.Config = CausalAttentionLogitBiasLayer.default_config(),
     z_loss_scale: float = 0.0,
     ffn_structure: str = "prenorm",
@@ -237,29 +234,25 @@ def model_config(
     layer_cfg.feed_forward.activation = activation_fn
     layer_cfg.feed_forward.hidden_dim = ffn_dim
     layer_cfg.feed_forward.structure = ffn_structure
-    # Attention.
-    if not use_flash_attention_impl:
+    if use_flash_attention_impl:
         print("Using the default Attention implementation.")
-        layer_cfg.self_attention.attention.num_heads = num_heads
-        if attention_qkv_linear is not None:
-            layer_cfg.self_attention.attention.input_linear = attention_qkv_linear
-        layer_cfg.self_attention.structure = atten_structure
-        layer_cfg.self_attention.attention.atten_logit_cap = atten_logit_cap
+        attention_layer = GroupedQueryAttention.default_config()
     else:
         print("Using the flash Attention implementation.")
-        attention_layer_cfg = TransformerAttentionLayer.default_config().set(
-            attention=FlashAttention.default_config().set(
-                # Use q/k-norm in keeping with:
-                # <https://arxiv.org/abs/2309.14322>
-                # <https://quip-apple.com/kGOSA20L3pNv>
-                num_heads=num_heads,
-                input_linear=attention_qkv_linear,
-                atten_logit_cap=atten_logit_cap,
-                causal=True,
-            ),
-            structure=atten_structure,
-        )
-        layer_cfg.self_attention = attention_layer_cfg
+        attention_layer = FlashAttention.default_config()
+    # Attention.
+    attention_layer_cfg = TransformerAttentionLayer.default_config().set(
+        attention=attention_layer.set(
+            # Use q/k-norm in keeping with:
+            # <https://arxiv.org/abs/2309.14322>
+            # <https://quip-apple.com/kGOSA20L3pNv>
+            num_heads=num_heads,
+            input_linear=attention_qkv_linear,
+            atten_logit_cap=atten_logit_cap,
+        ),
+        structure=atten_structure,
+    )
+    layer_cfg.self_attention = attention_layer_cfg
     if stack_cfg.klass is RepeatedTransformerLayer:
         # Enable remat to reduce memory usage for larger models.
         layer_cfg.remat_spec = build_remat_spec(stack_cfg)
@@ -267,7 +260,7 @@ def model_config(
     transformer_cls = stack_cfg.set(num_layers=num_layers, layer=layer_cfg)
     decoder_cfg = Decoder.default_config().set(
         transformer=transformer_cls,
-        attention_mask=attention_mask,
+        attention_mask=None if use_flash_attention_impl else attention_mask,
         dim=hidden_dim,
         vocab_size=vocab_size,
         emb=emb_cfg,
