@@ -19,7 +19,7 @@ dependencies = [
     "jax==0.4.25",
     "jaxlib==0.4.25",
     "nltk==3.7",  # for text preprocessing
-    "numpy",  # needed to pin to < 1.24; tf ragged_tensor depends on deprecated np.object.
+    "numpy==1.26.4",  # verified with latest tensorflow RaggedTensor
     "optax==0.1.7",  # optimizers (0.1.0 has known bugs).
     "portpicker",
     "protobuf>=3.20.3",
