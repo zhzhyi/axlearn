@@ -56,9 +56,9 @@ class SampleTest(absltest.TestCase):
         )
 
     def test_sample_size(self):
-        is_candidate1 = np.zeros(1024, dtype=np.bool)
+        is_candidate1 = np.zeros(1024, dtype=bool)
         is_candidate1[np.random.randint(low=0, high=1024, size=128)] = True
-        is_candidate2 = np.zeros(1024, dtype=np.bool)
+        is_candidate2 = np.zeros(1024, dtype=bool)
         is_candidate2[np.random.randint(low=0, high=1024, size=128)] = True
         is_candidate = np.stack([is_candidate1, is_candidate2])
 
@@ -68,9 +68,9 @@ class SampleTest(absltest.TestCase):
         np.testing.assert_array_equal(np.sum(samples, axis=-1), [32, 32])
 
     def test_sample_with_insufficient_candidates(self):
-        is_candidate1 = np.zeros(1024, dtype=np.bool)
+        is_candidate1 = np.zeros(1024, dtype=bool)
         is_candidate1[np.random.choice(np.arange(1024), size=128, replace=False)] = 1
-        is_candidate2 = np.zeros(1024, dtype=np.bool)
+        is_candidate2 = np.zeros(1024, dtype=bool)
         is_candidate2[np.random.choice(np.arange(1024), size=64, replace=False)] = 1
         is_candidate = np.stack([is_candidate1, is_candidate2])
 
@@ -85,7 +85,7 @@ class LabelSamplerTest(absltest.TestCase):
 
     def test_sample_foreground_only(self):
         labels = np.array([[1, 1, 0, -1, 0, 1]])
-        paddings = np.zeros_like(labels, dtype=np.bool)
+        paddings = np.zeros_like(labels, dtype=bool)
         prng_key = jax.random.PRNGKey(123)
         size = 2
         sampler = samplers.LabelSampler(
@@ -98,7 +98,7 @@ class LabelSamplerTest(absltest.TestCase):
 
     def test_sample_background_only(self):
         labels = np.array([[1, 1, 0, -1, 0, 0, 1]])
-        paddings = np.zeros_like(labels, dtype=np.bool)
+        paddings = np.zeros_like(labels, dtype=bool)
         prng_key = jax.random.PRNGKey(123)
         size = 2
         sampler = samplers.LabelSampler(
@@ -117,7 +117,7 @@ class LabelSamplerTest(absltest.TestCase):
         labels2[np.random.choice(np.arange(512), size=128, replace=False)] = 1
         labels2[np.random.choice(np.arange(512, 1024), size=64, replace=False)] = -1
         labels = np.stack([labels1, labels2])
-        paddings = np.zeros_like(labels, dtype=np.bool)
+        paddings = np.zeros_like(labels, dtype=bool)
         sampler = samplers.LabelSampler(
             size=64, foreground_fraction=0.25, background_label=0, ignore_label=-1
         )
@@ -140,7 +140,7 @@ class LabelSamplerTest(absltest.TestCase):
         labels2[np.random.choice(np.arange(16), size=16, replace=False)] = 1
         labels2[np.random.choice(np.arange(16, 1024), size=900, replace=False)] = -1
         labels = np.stack([labels1, labels2])
-        paddings = np.zeros_like(labels, dtype=np.bool)
+        paddings = np.zeros_like(labels, dtype=bool)
         sampler = samplers.LabelSampler(
             size=64, foreground_fraction=0.25, background_label=0, ignore_label=-1
         )
@@ -163,7 +163,7 @@ class LabelSamplerTest(absltest.TestCase):
         labels2[np.random.choice(np.arange(16), size=16, replace=False)] = 1
         labels2[np.random.choice(np.arange(16, 1024), size=42, replace=False)] = 0
         labels = np.stack([labels1, labels2])
-        paddings = np.zeros_like(labels, dtype=np.bool)
+        paddings = np.zeros_like(labels, dtype=bool)
         sampler = samplers.LabelSampler(
             size=64, foreground_fraction=0.25, background_label=0, ignore_label=-1
         )
