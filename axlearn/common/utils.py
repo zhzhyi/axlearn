@@ -39,7 +39,7 @@ import jax
 import numpy as np
 from absl import logging
 from jax import numpy as jnp
-from jax.experimental import maps, mesh_utils, multihost_utils, pjit
+from jax.experimental import maps, mesh_utils, multihost_utils
 from jax.sharding import PartitionSpec
 from jax.tree_util import register_pytree_node_class
 
