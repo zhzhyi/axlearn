@@ -86,7 +86,7 @@ gcp = [
 # Note: Specify -f https://storage.googleapis.com/jax-releases/libtpu_releases.html during install.
 tpu = [
     "axlearn[gcp]",
-    "jax[tpu]==0.4.21",  # must be >=0.4.19 for compat with v5p.
+    "jax[tpu]==0.4.25",  # must be >=0.4.19 for compat with v5p.
 ]
 # Vertex AI tensorboard.
 vertexai_tensorboard = [
