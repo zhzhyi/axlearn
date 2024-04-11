@@ -50,7 +50,7 @@ class SampleTest(absltest.TestCase):
         for prng_key in prng_keys:
             num_samples += samplers.sample(
                 is_candidate=is_candidate, size=sample_size, prng_key=prng_key
-            ).astype(np.float)
+            ).astype(float)
         np.testing.assert_allclose(
             expected_prob * is_candidate, num_samples / runs, rtol=0.2, atol=0.0
         )
