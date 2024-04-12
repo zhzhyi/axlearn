@@ -12,9 +12,9 @@ from typing import Dict, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
+from jax._src.typing import Array, ArrayLike
 from jax.experimental import checkify
 from jax.experimental.sparse import BCOO
-from jax._src.typing import Array, ArrayLike
 
 from axlearn.common.metrics import WeightedScalar
 from axlearn.common.utils import Tensor
@@ -274,10 +274,23 @@ def binary_classification_roc_auc_score(
     return score, valid_input
 
 
-# Referrence from jax.numpy.trapezoid from an older version of jax.
-# https://jax.readthedocs.io/en/latest/_modules/jax/_src/numpy/lax_numpy.html#trapezoid
-def _trapezoid(y: ArrayLike, x: ArrayLike | None = None, dx: ArrayLike = 1.0,
-              axis: int = -1) -> Array:
+def _trapezoid(
+    y: ArrayLike, x: Optional[ArrayLike] = None, dx: ArrayLike = 1.0, axis: int = -1
+) -> Array:
+    """trapzeoid function for numerical integration.
+
+    Referrence from jax.numpy.trapezoid from an older version of jax in the doc.
+    https://jax.readthedocs.io/en/latest/_modules/jax/_src/numpy/lax_numpy.html#trapezoid
+
+    Args:
+        y (ArrayLike): y value.
+        x (Optional[ArrayLike]): x value. Defaults to None, which then use dx directly.
+        dx (ArrayLike): dx value, used when x is None. Defaults to 1.0.
+        axis (int): the axis to be moved to last axis in dx. Defaults to -1.
+
+    Returns:
+        Array: the result of trapezoid function.
+    """
     dx_array: Array
     if x is None:
         dx_array = jnp.asarray(dx)
