@@ -169,11 +169,13 @@ def is_supported(
     data_partition: DataPartitionType,
     use_ema: bool = False,
 ):
-    del param_dtype, inference_dtype, use_ema  # not used
+    del param_dtype, use_ema  # not used
+    # TODO(xuan-zou): jax 0.4.25 breaks bfloat16 on CPU, will re-enable when fixed.
     return (
         test_utils.is_supported_platform(platform)
         and np.prod(mesh_shape) == jax.device_count()
         and (data_partition != DataPartitionType.FULL or global_batch_size >= jax.device_count())
+        and ((inference_dtype != jnp.bfloat16) or platform != "cpu")
     )
 
 
@@ -286,7 +288,7 @@ class InferenceTest(test_utils.TestCase):
         filter(
             lambda params: is_supported(*params),
             itertools.product(
-                ("cpu", "tpu"),  # platform,
+                ("cpu", "gpu", "tpu"),  # platform,
                 ((1, 1), (4, 1), (2, 2), (8, 1), (4, 2)),  # mesh_shape
                 (jnp.float32, jnp.bfloat16),  # param_dtype
                 (None, jnp.float32, jnp.bfloat16),  # inference_dtype
@@ -396,7 +398,7 @@ class InferenceTest(test_utils.TestCase):
         filter(
             lambda params: is_supported(*params),
             itertools.product(
-                ("cpu", "tpu"),  # platform,
+                ("cpu", "gpu", "tpu"),  # platform,
                 ((1, 1), (4, 1), (2, 2), (8, 1), (4, 2)),  # mesh_shape
                 (jnp.float32, jnp.bfloat16),  # param_dtype
                 (None, jnp.float32, jnp.bfloat16),  # inference_dtype
@@ -544,7 +546,7 @@ class InferenceTest(test_utils.TestCase):
         filter(
             lambda params: is_supported(*params),
             itertools.product(
-                ("cpu", "tpu"),  # platform,
+                ("cpu", "gpu", "tpu"),  # platform,
                 ((1, 1), (4, 1), (2, 2), (8, 1), (4, 2)),  # mesh_shape
                 (jnp.float32,),  # param_dtype
                 (jnp.float32,),  # inference_dtype
@@ -658,7 +660,7 @@ class InferenceTest(test_utils.TestCase):
         filter(
             lambda params: is_supported(*params),
             itertools.product(
-                ("cpu",),  # platform,
+                ("cpu", "gpu"),  # platform,
                 (
                     (1, 1),
                     (4, 1),
