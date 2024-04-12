@@ -14,6 +14,7 @@ import jax
 import jax.numpy as jnp
 from jax.experimental import checkify
 from jax.experimental.sparse import BCOO
+from jax._src.typing import Array, ArrayLike
 
 from axlearn.common.metrics import WeightedScalar
 from axlearn.common.utils import Tensor
@@ -273,6 +274,21 @@ def binary_classification_roc_auc_score(
     return score, valid_input
 
 
+# Referrence from jax.numpy.trapezoid from older version of jax.
+def _trapezoid(y: ArrayLike, x: ArrayLike | None = None, dx: ArrayLike = 1.0,
+              axis: int = -1) -> Array:
+    dx_array: Array
+    if x is None:
+        dx_array = jnp.asarray(dx)
+    else:
+        if x.ndim == 1:
+            dx_array = jnp.diff(x)
+        else:
+            dx_array = jnp.moveaxis(jnp.diff(x, axis=axis), axis, -1)
+    y_arr = jnp.moveaxis(y, axis, -1)
+    return 0.5 * (dx_array * (y_arr[..., 1:] + y_arr[..., :-1])).sum(-1)
+
+
 def _compute_area_under_the_curve(
     y_true: Tensor,
     y_score: Tensor,
@@ -283,7 +299,7 @@ def _compute_area_under_the_curve(
     samples. 'Args' and 'Returns' are the same with function binary_classification_roc_auc_score.
     """
     x, y = roc_curve(y_true, y_score, sample_weight=sample_weight)
-    area = jnp.trapz(y, x)
+    area = _trapezoid(y, x)
     return area
 
 
