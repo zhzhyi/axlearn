@@ -274,7 +274,8 @@ def binary_classification_roc_auc_score(
     return score, valid_input
 
 
-# Referrence from jax.numpy.trapezoid from older version of jax.
+# Referrence from jax.numpy.trapezoid from an older version of jax.
+# https://jax.readthedocs.io/en/latest/_modules/jax/_src/numpy/lax_numpy.html#trapezoid
 def _trapezoid(y: ArrayLike, x: ArrayLike | None = None, dx: ArrayLike = 1.0,
               axis: int = -1) -> Array:
     dx_array: Array
