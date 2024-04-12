@@ -189,5 +189,6 @@ class LabelSamplerTest(absltest.TestCase):
         np.testing.assert_array_equal(2, samples.indices.shape[-1])
         out_labels = np.take_along_axis(labels, samples.indices, axis=-1)
         np.testing.assert_array_equal(0, np.sum(out_labels == -1))
-        np.testing.assert_array_equal(0, np.sum(out_labels == paddings))
+        # Jax newer versions have a strong enforcement of shape for == operator.
+        np.testing.assert_array_equal(0, np.sum(out_labels == paddings[:, :2]))
         np.testing.assert_array_equal(False, samples.paddings)
