@@ -274,7 +274,7 @@ def binary_classification_roc_auc_score(
     return score, valid_input
 
 
-def _trapezoid(
+def trapezoid_fn(
     y: ArrayLike, x: Optional[ArrayLike] = None, dx: ArrayLike = 1.0, axis: int = -1
 ) -> Array:
     """trapzeoid function for numerical integration.
@@ -313,7 +313,7 @@ def _compute_area_under_the_curve(
     samples. 'Args' and 'Returns' are the same with function binary_classification_roc_auc_score.
     """
     x, y = roc_curve(y_true, y_score, sample_weight=sample_weight)
-    area = _trapezoid(y, x)
+    area = trapezoid_fn(y, x)
     return area
 
 
