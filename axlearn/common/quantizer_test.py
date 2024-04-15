@@ -1,4 +1,4 @@
-# Copyright © 2023 Apple Inc.
+KeyArrayLike  # Copyright © 2023 Apple Inc.
 #
 # Some of the code in this file is adapted from:
 #
@@ -31,7 +31,7 @@ from axlearn.common.quantizer import (
     compute_code_pplx,
     quantize_by_nearest_neighbor,
 )
-from axlearn.common.test_utils import TestCase, assert_allclose
+from axlearn.common.test_utils import TestCase, assert_allclose, prng_impl
 from axlearn.common.utils import Tensor, shapes
 
 _CODE_BOOK = jnp.array(
@@ -44,11 +44,13 @@ _CODE_BOOK = jnp.array(
 )
 
 
-def _create_prngkeyarray(prng_impl, key_data: List[int]) -> Tensor:
-    # pylint: disable-next=protected-access
-    return jax._src.prng.PRNGKeyArray(  # pytype: disable=module-attr
-        impl=prng_impl, key_data=jnp.array(key_data, dtype=jnp.uint32)
-    )
+def _create_prngkeyarray(key_data: List[int]) -> Tensor:
+    # Enable array of 64-bit keys.
+    jax.config.update("jax_enable_x64", True)
+    # jax._src.prng.PRNGKeyArrayImpl is deprecated, move to jax.random.key now.
+    # Build into uint32 and then view as uint64.
+    seed_64 = jnp.array(key_data, dtype=jnp.uint32).view("uint64").ravel().reshape(())
+    return jax.random.key(seed=seed_64)
 
 
 class HelpersTest(TestCase):
@@ -209,10 +211,9 @@ class RandomVectorQuantizerTest(TestCase):
             shapes(layer_params),
         )
         # pylint: disable-next=protected-access
-        proj_key = _create_prngkeyarray(jax._src.prng.threefry_prng_impl, [3077990774, 2166202870])
-        codebook_key = _create_prngkeyarray(  # pylint: disable-next=protected-access
-            jax._src.prng.threefry_prng_impl, [791337683, 1373966058]
-        )
+        with prng_impl("threefry2x32"):
+            proj_key = _create_prngkeyarray([3077990774, 2166202870])
+            codebook_key = _create_prngkeyarray([791337683, 1373966058])
 
         layer_params["rand_proj"]["weight"] = jax.random.uniform(
             key=proj_key, shape=(input_dim, dim_from_all_codebooks), minval=-1.0, maxval=1.0
