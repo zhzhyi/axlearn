@@ -17,6 +17,9 @@ import torch
 from absl.testing import absltest, parameterized
 from fairseq.modules import GumbelVectorQuantizer as fairseq_gumbel_vq
 
+# pylint: disable-next=protected-access
+from jax._src import prng as prng_interal
+
 from axlearn.common import schedule
 from axlearn.common.module import functional as F
 from axlearn.common.normalize import l2_normalize
@@ -46,11 +49,14 @@ _CODE_BOOK = jnp.array(
 
 def _create_prngkeyarray(key_data: List[int]) -> Tensor:
     # Enable array of 64-bit keys.
-    jax.config.update("jax_enable_x64", True)
-    # jax._src.prng.PRNGKeyArrayImpl is deprecated, move to jax.random.key now.
-    # Build into uint32 and then view as uint64.
-    seed_64 = jnp.array(key_data, dtype=jnp.uint32).view("uint64").ravel().reshape(())
-    return jax.random.key(seed=seed_64)
+    # jax.config.update("jax_enable_x64", True)
+    # # jax._src.prng.PRNGKeyArrayImpl is deprecated, move to jax.random.key now.
+    # # Build into uint32 and then view as uint64.
+    # seed_64 = jnp.array(key_data, dtype=jnp.uint32).view("uint64").ravel().reshape(())
+    # return jax.random.key(seed=seed_64)
+    return prng_interal.PRNGKeyArray(  # pytype: disable=module-attr
+        impl=prng_interal.threefry_prng_impl, key_data=jnp.array(key_data, dtype=jnp.uint32)
+    )
 
 
 class HelpersTest(TestCase):
@@ -238,7 +244,7 @@ class RandomVectorQuantizerTest(TestCase):
         expected_values = {
             2: {
                 True: dict(
-                    weight=18.9441719,
+                    weight=17.409603,
                     codebook=num_groups * vocab_size,
                     q_vecs=0.11563152,
                     ids=3,
@@ -248,7 +254,7 @@ class RandomVectorQuantizerTest(TestCase):
                     entropy=0.37677014,
                 ),
                 False: dict(
-                    weight=18.9441719,
+                    weight=17.409603,
                     codebook=67.37621,
                     q_vecs=1.3286973,
                     ids=14,
@@ -260,7 +266,7 @@ class RandomVectorQuantizerTest(TestCase):
             },
             3: {
                 True: dict(
-                    weight=24.2890186,
+                    weight=25.727945,
                     codebook=num_groups * vocab_size,
                     q_vecs=-20.109955,
                     ids=26,
@@ -270,7 +276,7 @@ class RandomVectorQuantizerTest(TestCase):
                     entropy=0.758697,
                 ),
                 False: dict(
-                    weight=24.2890186,
+                    weight=25.727945,
                     codebook=121.483154,
                     q_vecs=-54.850475,
                     ids=50,
@@ -282,7 +288,7 @@ class RandomVectorQuantizerTest(TestCase):
             },
             4: {
                 True: dict(
-                    weight=29.730346,
+                    weight=29.666399,
                     codebook=num_groups * vocab_size,
                     q_vecs=-27.134514,
                     ids=2008,
@@ -292,7 +298,7 @@ class RandomVectorQuantizerTest(TestCase):
                     entropy=1.0928545,
                 ),
                 False: dict(
-                    weight=29.730346,
+                    weight=29.666399,
                     codebook=5148.8306,
                     q_vecs=-345.86197,
                     ids=1793,
