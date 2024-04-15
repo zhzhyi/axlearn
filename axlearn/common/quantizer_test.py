@@ -48,12 +48,6 @@ _CODE_BOOK = jnp.array(
 
 
 def _create_prngkeyarray(key_data: List[int]) -> Tensor:
-    # Enable array of 64-bit keys.
-    # jax.config.update("jax_enable_x64", True)
-    # # jax._src.prng.PRNGKeyArrayImpl is deprecated, move to jax.random.key now.
-    # # Build into uint32 and then view as uint64.
-    # seed_64 = jnp.array(key_data, dtype=jnp.uint32).view("uint64").ravel().reshape(())
-    # return jax.random.key(seed=seed_64)
     return prng_interal.PRNGKeyArray(  # pytype: disable=module-attr
         impl=prng_interal.threefry_prng_impl, key_data=jnp.array(key_data, dtype=jnp.uint32)
     )
