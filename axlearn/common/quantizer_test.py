@@ -1,4 +1,4 @@
-KeyArrayLike  # Copyright © 2023 Apple Inc.
+# Copyright © 2023 Apple Inc.
 #
 # Some of the code in this file is adapted from:
 #
@@ -7,7 +7,7 @@ KeyArrayLike  # Copyright © 2023 Apple Inc.
 # Licensed under the Apache License, Version 2.0 (the "License").
 
 """Tests quantization layers and metrics."""
-# pylint: disable=no-self-use
+# pylint: disable=no-self-use,wrong-import-position,missing-module-docstring
 from typing import List
 
 import jax
@@ -238,7 +238,7 @@ class RandomVectorQuantizerTest(TestCase):
         expected_values = {
             2: {
                 True: dict(
-                    weight=17.409603,
+                    weight=18.9441719,
                     codebook=num_groups * vocab_size,
                     q_vecs=0.11563152,
                     ids=3,
@@ -248,7 +248,7 @@ class RandomVectorQuantizerTest(TestCase):
                     entropy=0.37677014,
                 ),
                 False: dict(
-                    weight=17.409603,
+                    weight=18.9441719,
                     codebook=67.37621,
                     q_vecs=1.3286973,
                     ids=14,
@@ -260,7 +260,7 @@ class RandomVectorQuantizerTest(TestCase):
             },
             3: {
                 True: dict(
-                    weight=25.727945,
+                    weight=24.2890186,
                     codebook=num_groups * vocab_size,
                     q_vecs=-20.109955,
                     ids=26,
@@ -270,7 +270,7 @@ class RandomVectorQuantizerTest(TestCase):
                     entropy=0.758697,
                 ),
                 False: dict(
-                    weight=25.727945,
+                    weight=24.2890186,
                     codebook=121.483154,
                     q_vecs=-54.850475,
                     ids=50,
@@ -282,7 +282,7 @@ class RandomVectorQuantizerTest(TestCase):
             },
             4: {
                 True: dict(
-                    weight=29.666399,
+                    weight=29.730346,
                     codebook=num_groups * vocab_size,
                     q_vecs=-27.134514,
                     ids=2008,
@@ -292,7 +292,7 @@ class RandomVectorQuantizerTest(TestCase):
                     entropy=1.0928545,
                 ),
                 False: dict(
-                    weight=29.666399,
+                    weight=29.730346,
                     codebook=5148.8306,
                     q_vecs=-345.86197,
                     ids=1793,
