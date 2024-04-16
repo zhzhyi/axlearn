@@ -12,9 +12,9 @@ from typing import Dict, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
-from jax._src.typing import Array, ArrayLike
 from jax.experimental import checkify
 from jax.experimental.sparse import BCOO
+from jax.scipy.integrate import trapezoid
 
 from axlearn.common.metrics import WeightedScalar
 from axlearn.common.utils import Tensor
@@ -274,35 +274,6 @@ def binary_classification_roc_auc_score(
     return score, valid_input
 
 
-def trapezoid_fn(
-    y: ArrayLike, x: Optional[ArrayLike] = None, dx: ArrayLike = 1.0, axis: int = -1
-) -> Array:
-    """trapzeoid function for numerical integration.
-
-    Referrence from jax.numpy.trapezoid from an older version of jax in the doc.
-    https://jax.readthedocs.io/en/latest/_modules/jax/_src/numpy/lax_numpy.html#trapezoid
-
-    Args:
-        y (ArrayLike): y value.
-        x (Optional[ArrayLike]): x value. Defaults to None, which then use dx directly.
-        dx (ArrayLike): dx value, used when x is None. Defaults to 1.0.
-        axis (int): the axis to be moved to last axis in dx. Defaults to -1.
-
-    Returns:
-        Array: the result of trapezoid function.
-    """
-    dx_array: Array
-    if x is None:
-        dx_array = jnp.asarray(dx)
-    else:
-        if x.ndim == 1:
-            dx_array = jnp.diff(x)
-        else:
-            dx_array = jnp.moveaxis(jnp.diff(x, axis=axis), axis, -1)
-    y_arr = jnp.moveaxis(y, axis, -1)
-    return 0.5 * (dx_array * (y_arr[..., 1:] + y_arr[..., :-1])).sum(-1)
-
-
 def _compute_area_under_the_curve(
     y_true: Tensor,
     y_score: Tensor,
@@ -313,7 +284,7 @@ def _compute_area_under_the_curve(
     samples. 'Args' and 'Returns' are the same with function binary_classification_roc_auc_score.
     """
     x, y = roc_curve(y_true, y_score, sample_weight=sample_weight)
-    area = trapezoid_fn(y, x)
+    area = trapezoid(y, x)
     return area
 
 
