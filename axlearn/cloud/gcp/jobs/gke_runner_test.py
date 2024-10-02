@@ -198,6 +198,7 @@ class TPUGKERunnerJobTest(parameterized.TestCase):
         cluster: str,
         service_account: str,
         enable_pre_provisioner: Optional[bool] = None,
+        emptydir_mount_spec: Optional[str] = None,
         gcsfuse_mount_spec: Optional[str] = None,
     ) -> Iterator[tuple[gke_runner.TPUGKERunnerJob.Config, dict]]:
         mock_user = mock.patch("os.environ", {"USER": "test"})
@@ -221,6 +222,8 @@ class TPUGKERunnerJobTest(parameterized.TestCase):
             if service_account:
                 fv.set_default("service_account", service_account)
             fv.set_default("enable_pre_provisioner", enable_pre_provisioner)
+            if emptydir_mount_spec:
+                fv.set_default("emptydir_mount_spec", emptydir_mount_spec)
             if gcsfuse_mount_spec:
                 fv.set_default("gcsfuse_mount_spec", gcsfuse_mount_spec)
             fv.set_default("instance_type", "tpu-v4-8")
@@ -233,9 +236,16 @@ class TPUGKERunnerJobTest(parameterized.TestCase):
         service_account=[None, "test-sa"],
         enable_pre_provisioner=[None, False, True],
         gcsfuse_mount_spec=[None, ["gcs_path=my-test-path"]],
+        emptydir_mount_spec=[None, ["name=tmp", "size_limit=1"]],
     )
     def test_from_flags(
-        self, name, cluster, service_account, enable_pre_provisioner, gcsfuse_mount_spec
+        self,
+        name,
+        cluster,
+        service_account,
+        enable_pre_provisioner,
+        gcsfuse_mount_spec,
+        emptydir_mount_spec,
     ):
         with self._job_config(
             name=name,
@@ -243,6 +253,7 @@ class TPUGKERunnerJobTest(parameterized.TestCase):
             service_account=service_account,
             enable_pre_provisioner=enable_pre_provisioner,
             gcsfuse_mount_spec=gcsfuse_mount_spec,
+            emptydir_mount_spec=emptydir_mount_spec,
         ) as (cfg, mock_settings):
             if name:
                 self.assertEqual(cfg.name, name)
@@ -254,6 +265,10 @@ class TPUGKERunnerJobTest(parameterized.TestCase):
             if gcsfuse_mount_spec:
                 fuse = cast(TPUGKEJob.Config, cfg.inner).gcsfuse_mount
                 self.assertEqual(fuse.gcs_path, "my-test-path")
+            if emptydir_mount_spec:
+                emptydir = cast(TPUGKEJob.Config, cfg.inner).emptydir_mount
+                self.assertEqual(emptydir.name, "tmp")
+                self.assertEqual(emptydir.size_limit, "1")
 
             # Test that TPU defaults are set.
             self.assertIn("TPU_TYPE", cfg.env_vars)

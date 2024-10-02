@@ -302,6 +302,25 @@ class GCSFuseMount:
     read_only: bool = False
 
 
+@dataclass
+class K8sEmptyDirMount:
+    """
+    Generic empty dir mount.
+    https://kubernetes.io/docs/concepts/storage/volumes/#emptydir
+
+    Attributes:
+        name: volume name.
+        size_limit: volume size limit as a tmpfs kernel param.
+        mount_path: Path within local fs to mount to inside trainer container.
+        medium: storage configure for this empty dir.
+    """
+
+    name: str = "tmp_memfs"
+    size_limit: str = "50Gi"
+    mount_path: str = "/tmp_memfs"
+    medium: str = "Memory"
+
+
 class GKEJob(GCPJob):
     """Base GKE Job interface."""
 
@@ -322,6 +341,7 @@ class GKEJob(GCPJob):
         env_vars: dict[str, str] = {}
         namespace: str = "default"
         gcsfuse_mount: Optional[GCSFuseMount] = None
+        emptydir_mount: Optional[K8sEmptyDirMount] = None
         # This config is made Optional for backwards compatibility. Default is False.
         enable_pre_provisioner: Optional[bool] = None
         queue: Optional[str] = None
@@ -336,6 +356,12 @@ class GKEJob(GCPJob):
             "gcsfuse_mount_spec",
             None,
             "GCS FUSE mount spec in the format key=value.",
+            flag_values=fv,
+        )
+        flags.DEFINE_multi_string(
+            "emptydir_mount_spec",
+            None,
+            "emptyDir mount spec in the format key=value.",
             flag_values=fv,
         )
         flags.DEFINE_string(
@@ -353,6 +379,10 @@ class GKEJob(GCPJob):
         )
         if fv.gcsfuse_mount_spec:
             cfg.gcsfuse_mount = GCSFuseMount(**parse_kv_flags(fv.gcsfuse_mount_spec, delimiter="="))
+        if fv.emptydir_mount_spec:
+            cfg.emptydir_mount = K8sEmptyDirMount(
+                **parse_kv_flags(fv.emptydir_mount_spec, delimiter="=")
+            )
         return cfg
 
 
@@ -444,6 +474,13 @@ class TPUGKEJob(GKEJob):
                     readOnly=cfg.gcsfuse_mount.read_only,
                 ),
             )
+        if cfg.emptydir_mount:
+            volume_mounts.append(
+                dict(
+                    name=cfg.emptydir_mount.name,
+                    mountPath=cfg.emptydir_mount.mount_path,
+                ),
+            )
 
         env_vars = {**cfg.env_vars}
         if cfg.enable_tpu_ici_resiliency is not None:
@@ -513,6 +550,16 @@ class TPUGKEJob(GKEJob):
                             bucketName=parsed.netloc,
                             mountOptions=f"only-dir={parsed.path.lstrip('/')}",
                         ),
+                    ),
+                )
+            )
+        if cfg.emptydir_mount:
+            volumes.append(
+                dict(
+                    name=cfg.emptydir_mount.name,
+                    emptyDir=dict(
+                        sizeLimit=cfg.emptydir_mount.size_limit,
+                        medium=cfg.emptydir_mount.medium,
                     ),
                 )
             )
